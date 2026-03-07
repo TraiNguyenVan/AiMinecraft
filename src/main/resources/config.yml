@@ -1,0 +1,18 @@
+# Gemini API Configuration
+gemini-api-key: "YOUR_GEMINI_API_KEY_HERE"
+# Choose your model: gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
+gemini-model: "gemini-2.5-flash"
+
+# The name displayed in chat
+bot-name: "Server"
+bot-prefix: "§6[Server]§f "
+
+# Proactive Chat (Yapping) settings
+yapper:
+  enabled: true
+  # Minimum and maximum delay in minutes between messages
+  min-delay: 10
+  max-delay: 15
+
+# Chat History Limit
+history-limit: 10

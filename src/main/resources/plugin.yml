@@ -1,0 +1,11 @@
+name: AiMinecraft
+version: 1.0
+main: com.yourname.aiminecraft.AiPlugin
+api-version: 1.20
+author: YourName
+description: An AI-powered yapping server assistant.
+commands:
+  ai:
+    description: Main command for AI Minecraft Plugin
+    usage: /ai [reload|info]
+    permission: aiminecraft.admin
