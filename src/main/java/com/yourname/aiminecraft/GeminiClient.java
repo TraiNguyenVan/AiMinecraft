@@ -49,7 +49,8 @@ public class GeminiClient {
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() != 200) {
-                        return "Error: API returned " + response.statusCode() + " " + response.body();
+                        System.err.println("Gemini API Error: " + response.statusCode() + " " + response.body());
+                        return "SKIP";
                     }
                     // Parse response to extract the text
                     JsonObject resJson = gson.fromJson(response.body(), JsonObject.class);
@@ -61,7 +62,8 @@ public class GeminiClient {
                                 .get(0).getAsJsonObject()
                                 .get("text").getAsString();
                     } catch (Exception e) {
-                        return "Error: Could not parse response. " + e.getMessage();
+                        System.err.println("Gemini API Parse Error: " + e.getMessage());
+                        return "SKIP";
                     }
                 });
     }

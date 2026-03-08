@@ -84,7 +84,7 @@ public class YapTask extends BukkitRunnable {
 
     private String buildYapPrompt(String time, String weather) {
         // Get the long-term memory (brain.log).
-        String brainContext = LogUtils.getLastLines(brainFile, 30);
+        String brainContext = LogUtils.getAllLines(brainFile);
         String template = plugin.getConfig().getString("prompts.yap-prompt");
 
         if (template == null) {

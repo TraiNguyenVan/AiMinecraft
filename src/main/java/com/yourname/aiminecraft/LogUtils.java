@@ -8,23 +8,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class LogUtils {
-    public static String getLastLines(File file, int lineCount) {
+    public static String getAllLines(File file) {
         if (!file.exists()) return "(No previous knowledge found)";
         
-        List<String> lines = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!line.trim().isEmpty()) {
-                    lines.add(line);
-                }
-                if (lines.size() > lineCount) {
-                    lines.remove(0);
-                }
-            }
+        try {
+            return java.nio.file.Files.readString(file.toPath());
         } catch (IOException e) {
             return "(Error reading brain logs)";
         }
-        return String.join("\n", lines);
     }
 }

@@ -56,44 +56,10 @@ public class AiPlugin extends JavaPlugin {
         }
     }
 
-    @Override
     public void onDisable() {
         // This runs when the server SHUTS DOWN.
-        saveChatSummary();
         getLogger().info("AI Minecraft Plugin Disabled.");
     }
 
-    private void saveChatSummary() {
-        // This function asks the AI to summarize everything that happened in the chat
-        // and saves it to "brain.log" so the bot "remembers" it next time.
-        if (listener == null || client == null) return;
-        String context = listener.getHistory();
-        if (context.isEmpty()) return;
 
-        String template = getConfig().getString("prompts.session-summary");
-        String prompt;
-        if (template != null) {
-            prompt = template.replace("{history}", context);
-        } else {
-            prompt = "[TASK]: Below is the recent chat history from the Minecraft server. " +
-                     "Summarize the main topics and events in 3 sentences for the server logs.\n\n" +
-                     "[CHAT HISTORY]:\n" + context + "\n\nSummary:";
-        }
-
-        try {
-            // We force the server to WAIT here for up to 5 seconds.
-            // If we don't wait, the server will close before the AI can finish writing!
-            String summary = client.generateResponse(prompt).get(5, TimeUnit.SECONDS);
-            if (summary != null && !summary.isBlank()) {
-                File brainFile = new File(getDataFolder(), "brain.log");
-                String logEntry = "\n--- SESSION SUMMARY (" + new Date().toString() + ") ---\n" + 
-                                  summary.trim() + "\n------------------------------------------\n";
-                // Append the summary to the end of brain.log
-                Files.writeString(brainFile.toPath(), logEntry, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-                getLogger().info("Successfully saved session summary to brain.log");
-            }
-        } catch (Exception e) {
-            getLogger().warning("Failed to save chat summary on shutdown: " + e.getMessage());
-        }
-    }
 }

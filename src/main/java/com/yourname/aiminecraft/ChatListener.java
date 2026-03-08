@@ -45,6 +45,14 @@ public class ChatListener implements Listener {
         // Convert the Minecraft message into simple text.
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
         
+        // First, append every message permanently to long term memory (brain.log)
+        try {
+            java.nio.file.Files.writeString(brainFile.toPath(), playerName + ": " + message + "\n", 
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (java.io.IOException e) {
+            plugin.getLogger().warning("Failed to save chat to brain.log: " + e.getMessage());
+        }
+
         // Add this message to the short-term memory (chat history).
         addHistory(playerName + ": " + message);
 
@@ -119,14 +127,22 @@ public class ChatListener implements Listener {
                 Bukkit.broadcast(Component.text(prefix + response.trim()));
                 // Add what the bot said to the memory too.
                 addHistory("Server: " + response.trim());
+                
+                // Save AI response to brain.log permanently
+                try {
+                    java.nio.file.Files.writeString(brainFile.toPath(), "Server: " + response.trim() + "\n", 
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                } catch (java.io.IOException e) {
+                    plugin.getLogger().warning("Failed to save AI response to brain.log.");
+                }
             });
         });
     }
 
     // This builds the detailed instructions for the AI when someone chats.
     private String buildThinkingPrompt(String user, boolean mentioned, int online) {
-        // Get the last 30 lines from the brain.log file.
-        String brainContext = LogUtils.getLastLines(brainFile, 30);
+        // Read the full brain.log file.
+        String brainContext = LogUtils.getAllLines(brainFile);
         String template = plugin.getConfig().getString("prompts.chat-decision");
 
         if (template == null) {
@@ -156,7 +172,7 @@ public class ChatListener implements Listener {
 
     // This builds the instructions for the AI when someone joins or leaves.
     private String buildEventPrompt(String user, String eventType, int online) {
-        String brainContext = LogUtils.getLastLines(brainFile, 30);
+        String brainContext = LogUtils.getAllLines(brainFile);
         String action = eventType.equals("JOIN") ? "just joined the server" : "just left the server";
         String template = plugin.getConfig().getString("prompts.event-decision");
 
@@ -181,8 +197,8 @@ public class ChatListener implements Listener {
 
     // NEW: This builds the "Hater" prompt for deaths and achievements.
     private String buildHaterPrompt(String user, String detail, String type) {
-        // Get the last 30 lines from the brain.log file.
-        String brainContext = LogUtils.getLastLines(brainFile, 30);
+        // Read the full brain.log file.
+        String brainContext = LogUtils.getAllLines(brainFile);
         String eventDescription = type.equals("DEATH") ? "just died: " + detail : "just completed the advancement: " + detail;
         String template = plugin.getConfig().getString("prompts.hater-prompt");
 
