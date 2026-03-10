@@ -17,8 +17,22 @@ yapper:
 # Chat History Limit
 history-limit: 10
 
+# Surroundings Scanner settings
+scanner:
+  # Block radius to scan around the player (30 = 61x61 grid)
+  radius: 30
+  # Number of Y-levels to scan above and below the player
+  layers-above: 30
+  layers-below: 30
+
+# Web-based 3D Map Viewer
+web-viewer:
+  enabled: true
+  port: 25462
+
 # Prompts for AI Decision Making
-# Use placeholders like {personality}, {brain}, {user}, {online}, {mentioned}, {history}, {action}, {event}, {time}, {weather}
+# Placeholders: {personality}, {brain}, {user}, {online}, {mentioned}, {history},
+#               {action}, {event}, {time}, {weather}, {surroundings}, {observed_player}
 prompts:
   # The main prompt used to decide if the AI should respond to a chat message.
   chat-decision: |
@@ -33,8 +47,12 @@ prompts:
     - Total players online: {online}
     - Was your name mentioned? {mentioned}
 
+    {surroundings}
+
     [RECENT CHAT HISTORY]:
     {history}
+
+    [VISUAL MAP]: An image of the player's surroundings is attached. Use it to understand terrain, buildings, and nearby blocks.
 
     [TASK]: Determine if you should respond. You are NOT a human; you are a server bot. 
     Do not try too hard to be helpful. Most messages should be ignored with 'SKIP'. 
@@ -58,6 +76,8 @@ prompts:
     - Action: {action}
     - Total players now online: {online}
 
+    {surroundings}
+
     [TASK]: Decide if this event is worth commenting on. You don't need to greet everyone. 
     If this player is a regular or if something interesting happened last time they were on, say something short. 
     Otherwise, respond exactly with 'SKIP'. Keep it under 2 sentences.
@@ -74,6 +94,10 @@ prompts:
     - Player: {user}
     - Event: {event}
 
+    {surroundings}
+
+    [VISUAL MAP]: An image of where the event happened is attached.
+
     [TASK]: You are the 'Hater'. Based on your personality, roast {user} for this event in one short, informal sentence. 
     Be chaotic, use slang (hell/hell nahh/lmao/fr), and don't be too nice. If you have nothing funny to say, respond 'SKIP'.
 
@@ -85,15 +109,17 @@ prompts:
     [PREVIOUS KNOWLEDGE (BRAIN LOGS)]:
     {brain}
 
-    [WORLD CONTEXT]:
-    - Current Time: {time}
-    - Weather: {weather}
+    {surroundings}
+    - Currently observing player: {observed_player}
+
+    [VISUAL MAP]: An image of {observed_player}'s surroundings is attached.
 
     [RECENT CHAT]:
     {history}
 
     [TASK]: Start a conversation or make a random observation about the server. 
-    Use the WORLD CONTEXT (time/weather) to make your comment feel real. 
+    Use the SURROUNDINGS data and the visual map to make your comment feel real. 
+    Comment on what {observed_player} is doing, where they are, or what's around them. 
     Refer to past events if relevant. Keep it short.
 
   # Prompt for session summary on shutdown.

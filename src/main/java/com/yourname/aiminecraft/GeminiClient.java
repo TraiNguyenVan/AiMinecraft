@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Base64;
 import java.util.concurrent.CompletableFuture;
 
 public class GeminiClient {
@@ -23,8 +24,8 @@ public class GeminiClient {
         this.gson = new Gson();
     }
 
+    /** Text-only request (original method, unchanged). */
     public CompletableFuture<String> generateResponse(String prompt) {
-        // Build the JSON request body
         JsonObject root = new JsonObject();
         JsonArray contents = new JsonArray();
         JsonObject contentObj = new JsonObject();
@@ -37,7 +38,46 @@ public class GeminiClient {
         contents.add(contentObj);
         root.add("contents", contents);
 
-        String jsonBody = gson.toJson(root);
+        return sendRequest(root);
+    }
+
+    /**
+     * Multimodal request: sends text + a PNG image to Gemini.
+     * The image is base64-encoded and sent as inline_data.
+     */
+    public CompletableFuture<String> generateResponse(String prompt, byte[] imageBytes) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            return generateResponse(prompt); // fallback to text-only
+        }
+
+        JsonObject root = new JsonObject();
+        JsonArray contents = new JsonArray();
+        JsonObject contentObj = new JsonObject();
+        JsonArray parts = new JsonArray();
+
+        // Text part
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("text", prompt);
+        parts.add(textPart);
+
+        // Image part
+        JsonObject imagePart = new JsonObject();
+        JsonObject inlineData = new JsonObject();
+        inlineData.addProperty("mime_type", "image/png");
+        inlineData.addProperty("data", Base64.getEncoder().encodeToString(imageBytes));
+        imagePart.add("inline_data", inlineData);
+        parts.add(imagePart);
+
+        contentObj.add("parts", parts);
+        contents.add(contentObj);
+        root.add("contents", contents);
+
+        return sendRequest(root);
+    }
+
+    /** Shared method to send the request and parse the response. */
+    private CompletableFuture<String> sendRequest(JsonObject requestBody) {
+        String jsonBody = gson.toJson(requestBody);
         String apiUrl = BASE_URL + model + ":generateContent?key=" + apiKey;
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -52,7 +92,6 @@ public class GeminiClient {
                         System.err.println("Gemini API Error: " + response.statusCode() + " " + response.body());
                         return "SKIP";
                     }
-                    // Parse response to extract the text
                     JsonObject resJson = gson.fromJson(response.body(), JsonObject.class);
                     try {
                         return resJson.getAsJsonArray("candidates")

@@ -16,7 +16,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.LinkedList;
 
-// This class "listens" to what's happening on the server (like people talking).
+/**
+ * Listens to server events and sends AI prompts with surroundings context.
+ */
 public class ChatListener implements Listener {
     private final JavaPlugin plugin;
     private GeminiClient aiClient;
@@ -24,11 +26,15 @@ public class ChatListener implements Listener {
     private String behavior;
     private final File brainFile;
 
+    // Scanner configuration (set by AiPlugin)
+    private int scanRadius = 5;
+    private int layersAbove = 4;
+    private int layersBelow = 2;
+
     public ChatListener(JavaPlugin plugin, GeminiClient aiClient, String behavior) {
         this.plugin = plugin;
         this.aiClient = aiClient;
         this.behavior = behavior;
-        // brain.log is the long-term memory of the bot.
         this.brainFile = new File(plugin.getDataFolder(), "brain.log");
     }
 
@@ -37,100 +43,114 @@ public class ChatListener implements Listener {
         this.behavior = behavior;
     }
 
-    // This runs whenever a player sends a chat message.
+    public void setScannerConfig(int radius, int layersAbove, int layersBelow) {
+        this.scanRadius = radius;
+        this.layersAbove = layersAbove;
+        this.layersBelow = layersBelow;
+    }
+
+    // --- Event Handlers ---
+
     @EventHandler
     public void onPlayerChat(AsyncChatEvent event) {
         Player player = event.getPlayer();
         String playerName = player.getName();
-        // Convert the Minecraft message into simple text.
         String message = PlainTextComponentSerializer.plainText().serialize(event.message());
-        
-        // First, append every message permanently to long term memory (brain.log)
+
+        // Save to long-term memory
         try {
-            java.nio.file.Files.writeString(brainFile.toPath(), playerName + ": " + message + "\n", 
+            java.nio.file.Files.writeString(brainFile.toPath(), playerName + ": " + message + "\n",
                 java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
         } catch (java.io.IOException e) {
             plugin.getLogger().warning("Failed to save chat to brain.log: " + e.getMessage());
         }
 
-        // Add this message to the short-term memory (chat history).
         addHistory(playerName + ": " + message);
 
         String botName = plugin.getConfig().getString("bot-name", "Server");
         boolean isMentioned = message.toLowerCase().contains(botName.toLowerCase());
         int onlinePlayers = Bukkit.getOnlinePlayers().size();
 
-        // Prepare the prompt for the AI to decide if it should speak.
-        String prompt = buildThinkingPrompt(playerName, isMentioned, onlinePlayers);
-        sendAiResponse(prompt, isMentioned);
+        // Must scan on main thread, then send prompt async
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            WorldScanner.ScanResult scan = WorldScanner.scan(player, scanRadius, layersBelow, layersAbove);
+            String surroundings = WorldScanner.buildTextSummary(scan);
+            byte[] mapImage = MapRenderer.render(scan);
+            String prompt = buildThinkingPrompt(playerName, isMentioned, onlinePlayers, surroundings);
+            sendAiResponse(prompt, mapImage, isMentioned);
+        });
     }
 
-    // This runs when someone JOINS the server.
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
-        String playerName = event.getPlayer().getName();
+        Player player = event.getPlayer();
+        String playerName = player.getName();
         int onlinePlayers = Bukkit.getOnlinePlayers().size();
 
-        // Wait 2 seconds (40 ticks) before the bot says anything.
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            String prompt = buildEventPrompt(playerName, "JOIN", onlinePlayers);
-            sendAiResponse(prompt, false);
+            WorldScanner.ScanResult scan = WorldScanner.scan(player, scanRadius, layersBelow, layersAbove);
+            String surroundings = WorldScanner.buildTextSummary(scan);
+            byte[] mapImage = MapRenderer.render(scan);
+            String prompt = buildEventPrompt(playerName, "JOIN", onlinePlayers, surroundings);
+            sendAiResponse(prompt, mapImage, false);
         }, 40L);
     }
 
-    // This runs when someone LEAVES the server.
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         String playerName = event.getPlayer().getName();
         int onlinePlayers = Bukkit.getOnlinePlayers().size() - 1;
 
-        String prompt = buildEventPrompt(playerName, "LEAVE", onlinePlayers);
-        sendAiResponse(prompt, false);
+        // Player is leaving, so we can't scan their surroundings — send text-only
+        String prompt = buildEventPrompt(playerName, "LEAVE", onlinePlayers, "(Player has left, no surroundings available)");
+        sendAiResponse(prompt, null, false);
     }
 
-    // NEW: This runs when someone DIES on the server.
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
         String deathMessage = event.getDeathMessage();
         if (deathMessage == null) return;
 
-        // Ask the AI to roast them for dying.
-        String prompt = buildHaterPrompt(player.getName(), deathMessage, "DEATH");
-        sendAiResponse(prompt, false);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            WorldScanner.ScanResult scan = WorldScanner.scan(player, scanRadius, layersBelow, layersAbove);
+            String surroundings = WorldScanner.buildTextSummary(scan);
+            byte[] mapImage = MapRenderer.render(scan);
+            String prompt = buildHaterPrompt(player.getName(), deathMessage, "DEATH", surroundings);
+            sendAiResponse(prompt, mapImage, false);
+        });
     }
 
-    // NEW: This runs when someone gets an ACHIEVEMENT (Advancement).
     @EventHandler
     public void onPlayerAdvancementDone(PlayerAdvancementDoneEvent event) {
-        // We only care about "real" advancements that have a display title.
         if (event.getAdvancement().getDisplay() == null) return;
-        
-        String player = event.getPlayer().getName();
+
+        Player player = event.getPlayer();
         String title = PlainTextComponentSerializer.plainText().serialize(event.getAdvancement().getDisplay().title());
 
-        // Ask the AI to comment on their "achievement".
-        String prompt = buildHaterPrompt(player, title, "ADVANCEMENT");
-        sendAiResponse(prompt, false);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            WorldScanner.ScanResult scan = WorldScanner.scan(player, scanRadius, layersBelow, layersAbove);
+            String surroundings = WorldScanner.buildTextSummary(scan);
+            byte[] mapImage = MapRenderer.render(scan);
+            String prompt = buildHaterPrompt(player.getName(), title, "ADVANCEMENT", surroundings);
+            sendAiResponse(prompt, mapImage, false);
+        });
     }
 
-    private void sendAiResponse(String prompt, boolean forceMention) {
-        // Send the prompt to Gemini AI and wait for a response.
-        aiClient.generateResponse(prompt).thenAccept(response -> {
+    // --- Response Sender ---
+
+    private void sendAiResponse(String prompt, byte[] imageBytes, boolean forceMention) {
+        aiClient.generateResponse(prompt, imageBytes).thenAccept(response -> {
             if (response == null || response.isBlank()) return;
-            // If the AI says 'SKIP', we don't broadcast anything to the server.
             if (response.toUpperCase().contains("SKIP") && !forceMention) return;
 
-            // Go back to the main Minecraft thread to send the message.
             Bukkit.getScheduler().runTask(plugin, () -> {
                 String prefix = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
                 Bukkit.broadcast(Component.text(prefix + response.trim()));
-                // Add what the bot said to the memory too.
                 addHistory("Server: " + response.trim());
-                
-                // Save AI response to brain.log permanently
+
                 try {
-                    java.nio.file.Files.writeString(brainFile.toPath(), "Server: " + response.trim() + "\n", 
+                    java.nio.file.Files.writeString(brainFile.toPath(), "Server: " + response.trim() + "\n",
                         java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
                 } catch (java.io.IOException e) {
                     plugin.getLogger().warning("Failed to save AI response to brain.log.");
@@ -139,9 +159,9 @@ public class ChatListener implements Listener {
         });
     }
 
-    // This builds the detailed instructions for the AI when someone chats.
-    private String buildThinkingPrompt(String user, boolean mentioned, int online) {
-        // Read the full brain.log file.
+    // --- Prompt Builders ---
+
+    private String buildThinkingPrompt(String user, boolean mentioned, int online, String surroundings) {
         String brainContext = LogUtils.getAllLines(brainFile);
         String template = plugin.getConfig().getString("prompts.chat-decision");
 
@@ -152,7 +172,9 @@ public class ChatListener implements Listener {
                    "- Speaker: " + user + "\n" +
                    "- Total players online: " + online + "\n" +
                    "- Was your name mentioned? " + (mentioned ? "Yes" : "No") + "\n\n" +
+                   surroundings + "\n\n" +
                    "[RECENT CHAT HISTORY]:\n" + getHistory() + "\n\n" +
+                   "[VISUAL MAP]: An image of the player's surroundings is attached. Use it to understand terrain, buildings, and nearby blocks.\n\n" +
                    "[TASK]: Determine if you should respond. You are NOT a human; you are a server bot. " +
                    "Do not try too hard to be helpful. Most messages should be ignored with 'SKIP'. " +
                    "Only respond if: \n" +
@@ -167,11 +189,11 @@ public class ChatListener implements Listener {
                 .replace("{user}", user)
                 .replace("{online}", String.valueOf(online))
                 .replace("{mentioned}", mentioned ? "Yes" : "No")
-                .replace("{history}", getHistory());
+                .replace("{history}", getHistory())
+                .replace("{surroundings}", surroundings);
     }
 
-    // This builds the instructions for the AI when someone joins or leaves.
-    private String buildEventPrompt(String user, String eventType, int online) {
+    private String buildEventPrompt(String user, String eventType, int online, String surroundings) {
         String brainContext = LogUtils.getAllLines(brainFile);
         String action = eventType.equals("JOIN") ? "just joined the server" : "just left the server";
         String template = plugin.getConfig().getString("prompts.event-decision");
@@ -183,6 +205,7 @@ public class ChatListener implements Listener {
                    "- Player: " + user + "\n" +
                    "- Action: " + action + "\n" +
                    "- Total players now online: " + online + "\n\n" +
+                   surroundings + "\n\n" +
                    "[TASK]: Decide if this event is worth commenting on. You don't need to greet everyone. " +
                    "If this player is a regular or if something interesting happened last time they were on, say something short. " +
                    "Otherwise, respond exactly with 'SKIP'. Keep it under 2 sentences.";
@@ -192,12 +215,11 @@ public class ChatListener implements Listener {
                 .replace("{brain}", brainContext)
                 .replace("{user}", user)
                 .replace("{action}", action)
-                .replace("{online}", String.valueOf(online));
+                .replace("{online}", String.valueOf(online))
+                .replace("{surroundings}", surroundings);
     }
 
-    // NEW: This builds the "Hater" prompt for deaths and achievements.
-    private String buildHaterPrompt(String user, String detail, String type) {
-        // Read the full brain.log file.
+    private String buildHaterPrompt(String user, String detail, String type, String surroundings) {
         String brainContext = LogUtils.getAllLines(brainFile);
         String eventDescription = type.equals("DEATH") ? "just died: " + detail : "just completed the advancement: " + detail;
         String template = plugin.getConfig().getString("prompts.hater-prompt");
@@ -208,20 +230,23 @@ public class ChatListener implements Listener {
                    "[SOCIAL CONTEXT]:\n" +
                    "- Player: " + user + "\n" +
                    "- Event: " + eventDescription + "\n\n" +
+                   surroundings + "\n\n" +
+                   "[VISUAL MAP]: An image of where the event happened is attached.\n\n" +
                    "[TASK]: You are the 'Hater'. Based on your personality, roast " + user + " for this event in one short, informal sentence. " +
-                   "Be chaotic, use slang (W/L/fr), and don't be too nice. If you have nothing funny to say, respond 'SKIP'.";
+                   "Be chaotic, use slang (hell/hell nahh/lmao/fr), and don't be too nice. If you have nothing funny to say, respond 'SKIP'.";
         }
 
         return template.replace("{personality}", behavior)
                 .replace("{brain}", brainContext)
                 .replace("{user}", user)
-                .replace("{event}", eventDescription);
+                .replace("{event}", eventDescription)
+                .replace("{surroundings}", surroundings);
     }
 
-    // This adds a line of chat to the bot's temporary memory.
+    // --- Memory Management ---
+
     public void addHistory(String line) {
         chatHistory.add(line);
-        // Keep only the last 10 messages (default).
         int limit = plugin.getConfig().getInt("history-limit", 10);
         while (chatHistory.size() > limit) chatHistory.removeFirst();
     }

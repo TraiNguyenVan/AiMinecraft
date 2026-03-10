@@ -3,34 +3,30 @@ package com.yourname.aiminecraft;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
-import java.util.Date;
-import java.util.concurrent.TimeUnit;
 
-// This is the main "brain" of the plugin. It's the first thing that runs when the server starts.
+/**
+ * Main plugin entry point. Loads config, starts AI client, web viewer, and event listeners.
+ */
 public class AiPlugin extends JavaPlugin {
     private GeminiClient client;
     private ChatListener listener;
+    private MapWebServer webServer;
     private String behavior;
 
     @Override
     public void onEnable() {
-        // This runs when the plugin is turned ON.
         loadResources();
-        // Register the "/ai" command so you can use it in-game.
         getCommand("ai").setExecutor(new AiCommand(this));
         getLogger().info("AI Minecraft Commands Registered!");
     }
 
     public void loadResources() {
-        // Create the folder for the plugin and the config.yml if they don't exist.
         saveDefaultConfig();
-        
-        // Grab your API key and model name from the config.yml file.
+
         String apiKey = getConfig().getString("gemini-api-key");
         String model = getConfig().getString("gemini-model", "gemini-1.5-flash");
-        
-        // Load the "personality" (behavior.txt) for the bot.
+
+        // Load behavior.txt
         this.behavior = "You are a helpful Minecraft server assistant.";
         try {
             File behaviorFile = new File(getDataFolder(), "behavior.txt");
@@ -38,28 +34,46 @@ public class AiPlugin extends JavaPlugin {
             this.behavior = Files.readString(behaviorFile.toPath());
         } catch (Exception e) { getLogger().warning("Could not load behavior.txt."); }
 
-        // Initialize the connection to Google's Gemini AI.
         this.client = new GeminiClient(apiKey, model);
-        
-        // Setup the "ChatListener" which watches what players type.
+
+        // Scanner config
+        int scanRadius = getConfig().getInt("scanner.radius", 5);
+        int layersAbove = getConfig().getInt("scanner.layers-above", 4);
+        int layersBelow = getConfig().getInt("scanner.layers-below", 2);
+
+        // Setup ChatListener
         if (this.listener != null) {
             this.listener.updateConfig(client, behavior);
+            this.listener.setScannerConfig(scanRadius, layersAbove, layersBelow);
         } else {
             this.listener = new ChatListener(this, client, behavior);
+            this.listener.setScannerConfig(scanRadius, layersAbove, layersBelow);
             getServer().getPluginManager().registerEvents(listener, this);
         }
 
-        // If "yapper" is enabled, start the timer for random bot messages.
+        // Start YapTask
         if (getConfig().getBoolean("yapper.enabled")) {
             int min = getConfig().getInt("yapper.min-delay", 10);
-            new YapTask(this, client, listener).runTaskLater(this, (long) min * 60 * 20);
+            new YapTask(this, client, listener, scanRadius, layersAbove, layersBelow)
+                .runTaskLater(this, (long) min * 60 * 20);
+        }
+
+        // Start web viewer
+        if (getConfig().getBoolean("web-viewer.enabled", true)) {
+            if (webServer != null) webServer.stop();
+            int port = getConfig().getInt("web-viewer.port", 25462);
+            webServer = new MapWebServer(this, port, scanRadius, layersAbove, layersBelow);
+            try {
+                webServer.start();
+            } catch (Exception e) {
+                getLogger().warning("Could not start map web viewer: " + e.getMessage());
+            }
         }
     }
 
+    @Override
     public void onDisable() {
-        // This runs when the server SHUTS DOWN.
+        if (webServer != null) webServer.stop();
         getLogger().info("AI Minecraft Plugin Disabled.");
     }
-
-
 }

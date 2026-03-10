@@ -2,11 +2,16 @@ package com.yourname.aiminecraft;
 
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
-// This is a "Task" that runs in the background to make the bot talk randomly.
+/**
+ * Background task that randomly starts conversations using player surroundings.
+ */
 public class YapTask extends BukkitRunnable {
     private final AiPlugin plugin;
     private final GeminiClient aiClient;
@@ -14,95 +19,86 @@ public class YapTask extends BukkitRunnable {
     private final Random random = new Random();
     private final File brainFile;
 
-    public YapTask(AiPlugin plugin, GeminiClient aiClient, ChatListener chatListener) {
+    // Scanner config
+    private final int scanRadius;
+    private final int layersAbove;
+    private final int layersBelow;
+
+    public YapTask(AiPlugin plugin, GeminiClient aiClient, ChatListener chatListener,
+                   int scanRadius, int layersAbove, int layersBelow) {
         this.plugin = plugin;
         this.aiClient = aiClient;
         this.chatListener = chatListener;
         this.brainFile = new File(plugin.getDataFolder(), "brain.log");
+        this.scanRadius = scanRadius;
+        this.layersAbove = layersAbove;
+        this.layersBelow = layersBelow;
     }
 
     @Override
     public void run() {
-        // If the "yapper" is turned off in config.yml, stop here.
         if (!plugin.getConfig().getBoolean("yapper.enabled")) return;
-        
-        // If no one is on the server, don't talk to yourself.
+
         if (Bukkit.getOnlinePlayers().isEmpty()) {
             scheduleNext();
             return;
         }
 
-        // NEW: Get information about the world (time and weather)
-        org.bukkit.World world = Bukkit.getWorlds().get(0); // Get the main world
-        String timeOfDay = getTimeDescription(world.getTime());
-        String weather = world.hasStorm() ? (world.isThundering() ? "THUNDERING" : "RAINING") : "CLEAR";
+        // Pick a random online player to observe
+        List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+        Player target = online.get(random.nextInt(online.size()));
 
-        // Create the instructions for the AI to start a conversation.
-        String prompt = buildYapPrompt(timeOfDay, weather);
+        // Scan must happen on the main thread (this task already runs on main thread via runTaskLater)
+        WorldScanner.ScanResult scan = WorldScanner.scan(target, scanRadius, layersBelow, layersAbove);
+        String surroundings = WorldScanner.buildTextSummary(scan);
+        byte[] mapImage = MapRenderer.render(scan);
 
-        aiClient.generateResponse(prompt).thenAccept(response -> {
-            // If the AI says 'SKIP' or gives no response, just wait for the next time.
+        String prompt = buildYapPrompt(target.getName(), surroundings);
+
+        aiClient.generateResponse(prompt, mapImage).thenAccept(response -> {
             if (response == null || response.isBlank() || response.toUpperCase().contains("SKIP")) {
                 scheduleNext();
                 return;
             }
 
-            // Go back to the main Minecraft thread to broadcast the message.
             Bukkit.getScheduler().runTask(plugin, () -> {
                 String prefix = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
                 Bukkit.broadcast(Component.text(prefix + response.trim()));
-                // Add the bot's message to its memory.
                 chatListener.addHistory("Server: " + response.trim());
-                // Schedule the next random message.
                 scheduleNext();
             });
         });
     }
 
     private void scheduleNext() {
-        // Get the min and max wait times from config.yml (in minutes).
         int min = plugin.getConfig().getInt("yapper.min-delay", 10);
         int max = plugin.getConfig().getInt("yapper.max-delay", 15);
-        // Pick a random number between min and max.
-        // Then convert minutes to "ticks" (1 minute = 60 seconds * 20 ticks).
         long delayTicks = (long) (random.nextInt(max - min + 1) + min) * 60 * 20;
-
-        // Run this task again after the random delay.
-        new YapTask(plugin, aiClient, chatListener).runTaskLater(plugin, delayTicks);
+        new YapTask(plugin, aiClient, chatListener, scanRadius, layersAbove, layersBelow)
+            .runTaskLater(plugin, delayTicks);
     }
 
-    // Helper to turn Minecraft time (0-24000) into human words
-    private String getTimeDescription(long time) {
-        if (time < 1000) return "DAWN";
-        if (time < 6000) return "MORNING";
-        if (time < 12000) return "AFTERNOON";
-        if (time < 13000) return "SUNSET";
-        if (time < 18000) return "NIGHT";
-        if (time < 23000) return "MIDNIGHT";
-        return "DAWN";
-    }
-
-    private String buildYapPrompt(String time, String weather) {
-        // Get the long-term memory (brain.log).
+    private String buildYapPrompt(String observedPlayer, String surroundings) {
         String brainContext = LogUtils.getAllLines(brainFile);
         String template = plugin.getConfig().getString("prompts.yap-prompt");
 
         if (template == null) {
             return "[PERSONALITY]:\n" + chatListener.getBehavior() + "\n\n" +
                    "[PREVIOUS KNOWLEDGE (BRAIN LOGS)]:\n" + brainContext + "\n\n" +
-                   "[WORLD CONTEXT]:\n" +
-                   "- Current Time: " + time + "\n" +
-                   "- Weather: " + weather + "\n\n" +
+                   surroundings + "\n" +
+                   "- Currently observing player: " + observedPlayer + "\n\n" +
+                   "[VISUAL MAP]: An image of " + observedPlayer + "'s surroundings is attached.\n\n" +
                    "[RECENT CHAT]:\n" + chatListener.getHistory() + "\n\n" +
                    "[TASK]: Start a conversation or make a random observation about the server. " +
-                   "Use the WORLD CONTEXT (time/weather) to make your comment feel real. " +
+                   "Use the SURROUNDINGS data and the visual map to make your comment feel real. " +
+                   "Comment on what " + observedPlayer + " is doing, where they are, or what's around them. " +
                    "Refer to past events if relevant. Keep it short.";
         }
 
         return template.replace("{personality}", chatListener.getBehavior())
                 .replace("{brain}", brainContext)
-                .replace("{time}", time)
-                .replace("{weather}", weather)
+                .replace("{surroundings}", surroundings)
+                .replace("{observed_player}", observedPlayer)
                 .replace("{history}", chatListener.getHistory());
     }
 }
