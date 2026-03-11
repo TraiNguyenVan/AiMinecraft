@@ -35,6 +35,13 @@ web-viewer:
   enabled: true
   port: 25462
 
+# Optional web search verification (Google Custom Search)
+search:
+  enabled: true
+  # Get an API key and CX from Google Programmable Search Engine.
+  google-api-key: "AIzaSyDAMEGMo1Btp1vPsnu7wc5pqSKMG9kCmi4"
+  google-cx: "01d191212b40142d7"
+
 # Prompts for AI Decision Making
 # Placeholders: {personality}, {brain}, {user}, {online}, {mentioned}, {history},
 #               {action}, {event}, {time}, {weather}, {surroundings}, {observed_player}
