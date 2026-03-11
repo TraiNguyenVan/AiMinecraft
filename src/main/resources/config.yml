@@ -1,5 +1,5 @@
 # Gemini API Configuration
-gemini-api-key: "AIzaSyAc7kkn0XBnhytvbMjB3yiHDb6ZLTFtCrM"
+gemini-api-key: "YOUR_GEMINI_API_KEY_HERE"
 # Choose your model: gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
 gemini-model: "gemini-2.5-flash"
 

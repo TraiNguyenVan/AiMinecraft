@@ -41,9 +41,11 @@ public class MapWebServer {
         server.createContext("/", this::handleIndex);
         server.createContext("/api/blocks", this::handleBlocks);
         server.createContext("/api/players", this::handlePlayers);
+        server.createContext("/api/vision", this::handleVision);
 
         server.start();
         plugin.getLogger().info("[MapViewer] Web viewer started at http://localhost:" + port);
+        plugin.getLogger().info("[MapViewer] Vision preview at http://localhost:" + port + "/?tab=vision");
     }
 
     public void stop() {
@@ -131,6 +133,54 @@ public class MapWebServer {
         }
     }
 
+    /** Renders the AI vision PNG for a player and serves it as image/png. */
+    private void handleVision(HttpExchange exchange) throws IOException {
+        String query = exchange.getRequestURI().getQuery();
+        String playerName = null;
+        if (query != null) {
+            for (String param : query.split("&")) {
+                String[] kv = param.split("=", 2);
+                if (kv.length == 2 && kv[0].equals("player")) playerName = kv[1];
+            }
+        }
+
+        final String targetName = playerName;
+        CompletableFuture<byte[]> future = new CompletableFuture<>();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                Player player = null;
+                if (targetName != null) player = Bukkit.getPlayer(targetName);
+                if (player == null) {
+                    var online = Bukkit.getOnlinePlayers();
+                    if (!online.isEmpty()) player = online.iterator().next();
+                }
+                if (player == null) { future.complete(new byte[0]); return; }
+
+                WorldScanner.ScanResult scan = WorldScanner.scan(player, scanRadius, layersBelow, layersAbove);
+                byte[] png = MapRenderer.render(scan);
+                future.complete(png);
+            } catch (Exception e) {
+                plugin.getLogger().warning("[Vision] Render error: " + e.getMessage());
+                future.complete(new byte[0]);
+            }
+        });
+
+        try {
+            byte[] png = future.get();
+            if (png.length == 0) {
+                sendError(exchange, 503, "No players online or render failed");
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "image/png");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+            exchange.sendResponseHeaders(200, png.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(png); }
+        } catch (Exception e) {
+            sendError(exchange, 500, e.getMessage());
+        }
+    }
+
     private void sendError(HttpExchange exchange, int code, String message) throws IOException {
         String json = "{\"error\": \"" + message + "\"}";
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
@@ -162,15 +212,15 @@ public class MapWebServer {
   }
   #hud {
     position: fixed; top: 0; left: 0; right: 0;
-    background: linear-gradient(180deg, rgba(13,13,20,0.95) 0%, rgba(13,13,20,0) 100%);
-    padding: 16px 24px;
-    display: flex; align-items: center; gap: 20px;
+    background: linear-gradient(180deg, rgba(13,13,20,0.97) 0%, rgba(13,13,20,0) 100%);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px;
     z-index: 100;
     pointer-events: none;
   }
   #hud > * { pointer-events: auto; }
   #hud h1 {
-    font-size: 16px; font-weight: 700;
+    font-size: 15px; font-weight: 700;
     background: linear-gradient(135deg, #6ee7b7, #3b82f6);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     white-space: nowrap;
@@ -189,16 +239,32 @@ public class MapWebServer {
     background: rgba(255,255,255,0.15);
     border-color: rgba(110,231,183,0.5);
   }
+  .tab-btn {
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(255,255,255,0.06);
+    color: #9999bb;
+  }
+  .tab-btn.active {
+    background: rgba(110,231,183,0.18);
+    border-color: #6ee7b7;
+    color: #6ee7b7;
+  }
   #info-panel {
     position: fixed; bottom: 16px; left: 16px;
-    background: rgba(13,13,20,0.85);
+    background: rgba(13,13,20,0.88);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 12px;
-    padding: 16px 20px;
+    padding: 14px 18px;
     font-size: 12px;
-    line-height: 1.6;
-    max-width: 320px;
+    line-height: 1.7;
+    max-width: 300px;
     z-index: 100;
   }
   #info-panel .label { color: #6ee7b7; font-weight: 600; }
@@ -209,19 +275,63 @@ public class MapWebServer {
     font-size: 14px; color: #6ee7b7;
     z-index: 200;
   }
-  #canvas-container { width: 100vw; height: 100vh; }
+  /* 3D view */
+  #canvas-container { width: 100vw; height: 100vh; display: block; }
+  /* Vision view */
+  #vision-container {
+    display: none;
+    width: 100vw;
+    height: 100vh;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    background: #0a0a12;
+  }
+  #vision-frame {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin-top: 56px;
+  }
+  #vision-img {
+    max-width: 95vw;
+    max-height: calc(100vh - 120px);
+    border-radius: 10px;
+    border: 1px solid rgba(110,231,183,0.25);
+    image-rendering: pixelated;
+    box-shadow: 0 0 60px rgba(110,231,183,0.08);
+    object-fit: contain;
+  }
+  #vision-status {
+    font-size: 11px;
+    color: #556;
+    letter-spacing: 0.04em;
+  }
 </style>
 </head>
 <body>
 <div id="hud">
-  <h1>🗺️ AiMinecraft Map</h1>
+  <h1>🗺️ AiMinecraft</h1>
+  <button class="tab-btn active" id="tab-3d"   onclick="switchTab('3d')">🌍 3D Map</button>
+  <button class="tab-btn"        id="tab-vision" onclick="switchTab('vision')">👁️ AI Vision</button>
   <select id="player-select"><option>Loading...</option></select>
-  <button onclick="refresh()">⟳ Refresh</button>
-  <span style="font-size:12px;color:#888;">Auto-refresh: 5s | Scroll to zoom | Drag to orbit</span>
+  <button onclick="doRefresh()">⟳ Refresh</button>
+  <span style="font-size:12px;color:#556;">Scroll=zoom · Drag=orbit</span>
 </div>
+
+<!-- 3D viewer -->
 <div id="info-panel">Waiting for data...</div>
 <div id="loading">⏳ Loading world data...</div>
 <div id="canvas-container"></div>
+
+<!-- Vision preview -->
+<div id="vision-container">
+  <div id="vision-frame">
+    <img id="vision-img" src="" alt="AI Vision" />
+    <span id="vision-status">Auto-refreshes every 3 s</span>
+  </div>
+</div>
 
 <script type="importmap">
 {
@@ -502,16 +612,65 @@ async function refresh() {
 
 window.refresh = refresh;
 
+// ---- Tab switching ----
+let currentTab = '3d';
+let visionInterval = null;
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-3d').classList.toggle('active', tab === '3d');
+  document.getElementById('tab-vision').classList.toggle('active', tab === 'vision');
+  document.getElementById('canvas-container').style.display = tab === '3d' ? 'block' : 'none';
+  document.getElementById('info-panel').style.display = tab === '3d' ? '' : 'none';
+  document.getElementById('vision-container').style.display = tab === 'vision' ? 'flex' : 'none';
+  if (tab === 'vision') startVision();
+  else stopVision();
+}
+window.switchTab = switchTab;
+
+function startVision() {
+  refreshVision();
+  if (!visionInterval) visionInterval = setInterval(refreshVision, 3000);
+}
+
+function stopVision() {
+  if (visionInterval) { clearInterval(visionInterval); visionInterval = null; }
+}
+
+async function refreshVision() {
+  const player = document.getElementById('player-select').value;
+  if (!player || player === 'No players online' || player === 'Loading...') {
+    document.getElementById('vision-status').textContent = 'No player selected';
+    return;
+  }
+  const url = '/api/vision?player=' + encodeURIComponent(player) + '&t=' + Date.now();
+  document.getElementById('vision-img').src = url;
+  document.getElementById('vision-status').textContent =
+    'Live — ' + player + ' — updated ' + new Date().toLocaleTimeString();
+}
+
+function doRefresh() {
+  if (currentTab === '3d') refresh();
+  else refreshVision();
+}
+window.doRefresh = doRefresh;
+
+// Check URL param for initial tab
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('tab') === 'vision') switchTab('vision');
+
 // Startup
 init();
 loadPlayers();
 refresh();
 
-// Auto-refresh every 5 seconds
-setInterval(() => { loadPlayers(); refresh(); }, 5000);
+// Auto-refresh 3D every 5 seconds
+setInterval(() => { loadPlayers(); if (currentTab === '3d') refresh(); }, 5000);
 
 // Refresh when player changes
-document.getElementById('player-select').addEventListener('change', refresh);
+document.getElementById('player-select').addEventListener('change', () => {
+  if (currentTab === '3d') refresh(); else refreshVision();
+});
 </script>
 </body>
 </html>

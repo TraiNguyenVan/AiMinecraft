@@ -18,6 +18,8 @@ public class AiPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Load Minecraft textures asynchronously so startup is not blocked
+        getServer().getScheduler().runTaskAsynchronously(this, () -> TextureManager.initialize(this));
         loadResources();
         AiCommand commandExecutor = new AiCommand(this);
         getCommand("ai").setExecutor(commandExecutor);

@@ -1,0 +1,19 @@
+# Maven
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# API key safety
+.env
+config.yml
+
+# OS
+.DS_Store
+Thumbs.db
