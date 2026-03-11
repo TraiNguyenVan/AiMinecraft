@@ -11,17 +11,26 @@ public class AiPlugin extends JavaPlugin {
     private GeminiClient client;
     private ChatListener listener;
     private MapWebServer webServer;
+    private MemoryManager memoryManager;
     private String behavior;
+    private boolean aiEnabled = true;
+    private String interactionMode = "global";
 
     @Override
     public void onEnable() {
         loadResources();
-        getCommand("ai").setExecutor(new AiCommand(this));
+        AiCommand commandExecutor = new AiCommand(this);
+        getCommand("ai").setExecutor(commandExecutor);
+        getCommand("server").setExecutor(commandExecutor);
         getLogger().info("AI Minecraft Commands Registered!");
     }
 
     public void loadResources() {
         saveDefaultConfig();
+        reloadConfig();
+
+        this.aiEnabled = getConfig().getBoolean("enabled", true);
+        this.interactionMode = getConfig().getString("interaction-mode", "global");
 
         String apiKey = getConfig().getString("gemini-api-key");
         String model = getConfig().getString("gemini-model", "gemini-1.5-flash");
@@ -33,6 +42,10 @@ public class AiPlugin extends JavaPlugin {
             if (!behaviorFile.exists()) saveResource("behavior.txt", false);
             this.behavior = Files.readString(behaviorFile.toPath());
         } catch (Exception e) { getLogger().warning("Could not load behavior.txt."); }
+
+        if (this.memoryManager == null) {
+            this.memoryManager = new MemoryManager(this);
+        }
 
         this.client = new GeminiClient(apiKey, model);
 
@@ -46,7 +59,7 @@ public class AiPlugin extends JavaPlugin {
             this.listener.updateConfig(client, behavior);
             this.listener.setScannerConfig(scanRadius, layersAbove, layersBelow);
         } else {
-            this.listener = new ChatListener(this, client, behavior);
+            this.listener = new ChatListener(this, client, behavior, memoryManager);
             this.listener.setScannerConfig(scanRadius, layersAbove, layersBelow);
             getServer().getPluginManager().registerEvents(listener, this);
         }
@@ -54,7 +67,7 @@ public class AiPlugin extends JavaPlugin {
         // Start YapTask
         if (getConfig().getBoolean("yapper.enabled")) {
             int min = getConfig().getInt("yapper.min-delay", 10);
-            new YapTask(this, client, listener, scanRadius, layersAbove, layersBelow)
+            new YapTask(this, client, listener, scanRadius, layersAbove, layersBelow, memoryManager)
                 .runTaskLater(this, (long) min * 60 * 20);
         }
 
@@ -71,9 +84,38 @@ public class AiPlugin extends JavaPlugin {
         }
     }
 
+    public boolean isAiEnabled() {
+        return aiEnabled;
+    }
+
+    public void setAiEnabled(boolean aiEnabled) {
+        this.aiEnabled = aiEnabled;
+        getConfig().set("enabled", aiEnabled);
+        saveConfig();
+    }
+
+    public boolean isGlobalMode() {
+        return "global".equalsIgnoreCase(interactionMode);
+    }
+
+    public String getInteractionMode() {
+        return interactionMode;
+    }
+
+    public void setInteractionMode(String mode) {
+        this.interactionMode = mode;
+        getConfig().set("interaction-mode", mode);
+        saveConfig();
+    }
+
+    public ChatListener getChatListener() {
+        return listener;
+    }
+
     @Override
     public void onDisable() {
         if (webServer != null) webServer.stop();
+        if (memoryManager != null) memoryManager.saveAll();
         getLogger().info("AI Minecraft Plugin Disabled.");
     }
 }

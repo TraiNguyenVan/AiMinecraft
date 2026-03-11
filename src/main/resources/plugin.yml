@@ -7,5 +7,8 @@ description: An AI-powered yapping server assistant.
 commands:
   ai:
     description: Main command for AI Minecraft Plugin
-    usage: /ai [reload|info]
+    usage: /ai [reload|info|on|off|toggle|mode]
     permission: aiminecraft.admin
+  server:
+    description: Directly talk to the AI (Whisper to AI)
+    usage: /server <message>

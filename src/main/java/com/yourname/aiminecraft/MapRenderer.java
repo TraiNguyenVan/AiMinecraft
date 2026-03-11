@@ -334,8 +334,15 @@ public class MapRenderer {
         int crossW = diameter * BLOCK_SIZE;
         int crossH = totalLayers * BLOCK_SIZE;
 
-        int totalW = topDownW + PADDING + crossW + PADDING + LEGEND_WIDTH;
-        int totalH = topDownH + PADDING + crossH + 30; // 30 for title
+        int fovW = 640;
+        int fovH = 360;
+
+        int contentW = topDownW + PADDING + crossW + PADDING + LEGEND_WIDTH;
+        int totalW = Math.max(contentW, fovW + 8);
+
+        int nsBottomY = 22 + topDownH + PADDING + 14 + crossH + 10;
+        int fovYOffset = nsBottomY + 20;
+        int totalH = fovYOffset + fovH + 30;
 
         BufferedImage img = new BufferedImage(totalW, totalH, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
@@ -472,6 +479,88 @@ public class MapRenderer {
             g.setColor(new Color(200, 200, 210));
             g.drawString(legendEntries[i][0], legendX + 12, ly + 8);
         }
+
+        // === PLAYER PERSPECTIVE (RAYCASTED 90 FOV) ===
+        // Camera axes
+        double yawRad = -Math.toRadians(result.playerYaw); // MC yaw is clockwise, negate for standard math
+        double pitchRad = -Math.toRadians(result.playerPitch); // MC pitch is negative when looking up
+
+        double fx = -Math.sin(yawRad) * Math.cos(pitchRad);
+        double fy = Math.sin(pitchRad); 
+        double fz = Math.cos(yawRad) * Math.cos(pitchRad);
+
+        double rx = -Math.sin(yawRad - Math.PI/2);
+        double ry = 0;
+        double rz = Math.cos(yawRad - Math.PI/2);
+
+        // up = right x forward
+        double ux = ry * fz - rz * fy;
+        double uy = rz * fx - rx * fz;
+        double uz = rx * fy - ry * fx;
+
+        double sx = result.radius + 0.5;
+        double sz = result.radius + 0.5;
+        double sy = result.layersBelow + 1.62;
+
+        BufferedImage fovImg = new BufferedImage(fovW, fovH, BufferedImage.TYPE_INT_RGB);
+        for (int fpy = 0; fpy < fovH; fpy++) {
+            for (int fpx = 0; fpx < fovW; fpx++) {
+                double vpx = ((double)fpx / fovW - 0.5) * 2.0;
+                double vpy = ((double)fpy / fovH - 0.5) * 2.0 * ((double)fovH / fovW);
+
+                double dx = fx + rx * vpx - ux * vpy; // -ux because pixel Y goes down
+                double dy = fy + ry * vpx - uy * vpy;
+                double dz = fz + rz * vpx - uz * vpy;
+
+                double len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                dx /= len; dy /= len; dz /= len;
+
+                double rTotal = 0, gTotal = 0, bTotal = 0, opacityLeft = 1.0;
+                int lastBx = -1, lastBy = -1, lastBz = -1;
+
+                for (double t = 0.0; t <= result.radius; t += 0.1) {
+                    int bx = (int) Math.floor(sx + dx * t);
+                    int by = (int) Math.floor(sy + dy * t);
+                    int bz = (int) Math.floor(sz + dz * t);
+
+                    if (bx == lastBx && by == lastBy && bz == lastBz) continue;
+                    lastBx = bx; lastBy = by; lastBz = bz;
+
+                    if (by >= 0 && by < totalLayers && bx >= 0 && bx < diameter && bz >= 0 && bz < diameter) {
+                        Material mat = result.blocks[by][bz][bx];
+                        if (mat != Material.AIR && mat != Material.CAVE_AIR && mat != Material.VOID_AIR) {
+                            Color c = getBlockColor(mat);
+                            double shade = Math.max(0.1, 1.0 - (t / result.radius));
+                            double a = c.getAlpha() / 255.0; 
+
+                            double alphaToApply = a * opacityLeft;
+                            rTotal += c.getRed() * shade * alphaToApply;
+                            gTotal += c.getGreen() * shade * alphaToApply;
+                            bTotal += c.getBlue() * shade * alphaToApply;
+
+                            opacityLeft -= alphaToApply;
+                            if (opacityLeft <= 0.01) break; 
+                        }
+                    }
+                }
+
+                // Apply sky color for remaining opacity
+                rTotal += 20 * opacityLeft;
+                gTotal += 20 * opacityLeft;
+                bTotal += 30 * opacityLeft;
+
+                int finalColor = new Color((int)rTotal, (int)gTotal, (int)bTotal).getRGB();
+                fovImg.setRGB(fpx, fpy, finalColor);
+            }
+        }
+
+        g.drawImage(fovImg, 0, fovYOffset, null);
+        g.setColor(new Color(60, 60, 80));
+        g.drawRect(-1, fovYOffset - 1, fovW + 1, fovH + 1);
+
+        g.setColor(new Color(180, 180, 200));
+        g.setFont(new Font("Monospaced", Font.PLAIN, 10));
+        g.drawString("Player Perspective (90° FOV, Raycasted 2.5D)", 2, fovYOffset + fovH + 12);
 
         g.dispose();
 

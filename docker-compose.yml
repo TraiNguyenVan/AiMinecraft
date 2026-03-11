@@ -1,0 +1,12 @@
+services:
+  builder:
+    build: .
+    volumes:
+      # Persistent Maven local repository
+      - maven-repo:/root/.m2
+      # Project source code
+      - .:/app
+    command: mvn clean package
+
+volumes:
+  maven-repo:

@@ -62,6 +62,8 @@ public class WorldScanner {
         public final int playerBlockX;
         public final int playerBlockY;
         public final int playerBlockZ;
+        public final float playerYaw;
+        public final float playerPitch;
         public final String biome;
         public final String dimension;
         public final String timeOfDay;
@@ -80,7 +82,7 @@ public class WorldScanner {
         public final List<String> nearbyPlayers;
 
         public ScanResult(Material[][][] blocks, int radius, int layersBelow, int layersAbove,
-                          int px, int py, int pz, String biome, String dimension,
+                          int px, int py, int pz, float yaw, float pitch, String biome, String dimension,
                           String timeOfDay, String weather, int lightLevel,
                           double health, int maxHealth, int foodLevel,
                           boolean isFlying, boolean isSwimming, boolean isSneaking,
@@ -94,6 +96,8 @@ public class WorldScanner {
             this.playerBlockX = px;
             this.playerBlockY = py;
             this.playerBlockZ = pz;
+            this.playerYaw = yaw;
+            this.playerPitch = pitch;
             this.biome = biome;
             this.dimension = dimension;
             this.timeOfDay = timeOfDay;
@@ -122,6 +126,8 @@ public class WorldScanner {
         int px = loc.getBlockX();
         int py = loc.getBlockY();
         int pz = loc.getBlockZ();
+        float yaw = loc.getYaw();
+        float pitch = loc.getPitch();
 
         int diameter = radius * 2 + 1;
         int totalLayers = layersBelow + layersAbove + 1;
@@ -205,7 +211,7 @@ public class WorldScanner {
         }
 
         return new ScanResult(blocks, radius, layersBelow, layersAbove,
-            px, py, pz, biome, dimension, timeOfDay, weather, lightLevel,
+            px, py, pz, yaw, pitch, biome, dimension, timeOfDay, weather, lightLevel,
             health, maxHealth, foodLevel, isFlying, isSwimming, isSneaking,
             notableBlocks, nearbyStructures, hostileMobs, passiveMobs, nearbyPlayers);
     }
@@ -273,6 +279,8 @@ public class WorldScanner {
         playerInfo.addProperty("x", r.playerBlockX);
         playerInfo.addProperty("y", r.playerBlockY);
         playerInfo.addProperty("z", r.playerBlockZ);
+        playerInfo.addProperty("yaw", r.playerYaw);
+        playerInfo.addProperty("pitch", r.playerPitch);
         playerInfo.addProperty("health", r.health);
         playerInfo.addProperty("maxHealth", r.maxHealth);
         playerInfo.addProperty("foodLevel", r.foodLevel);

@@ -3,6 +3,7 @@ package com.yourname.aiminecraft;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
 public class AiCommand implements CommandExecutor {
@@ -14,32 +15,118 @@ public class AiCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+        // Handle /server <msg>
+        if (label.equalsIgnoreCase("server")) {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage("§cOnly players can talk to the AI.");
+                return true;
+            }
+            if (!plugin.isAiEnabled()) {
+                sender.sendMessage("§c[AI] The AI is currently disabled.");
+                return true;
+            }
+            if (args.length == 0) {
+                sender.sendMessage("§cUsage: /server <message>");
+                return true;
+            }
+            
+            String message = String.join(" ", args);
+            plugin.getChatListener().handleInteraction(player, message, true);
+            return true;
+        }
+
+        // Handle /ai <args>
         if (!sender.hasPermission("aiminecraft.admin")) {
             sender.sendMessage("§cYou don't have permission to use this command.");
             return true;
         }
 
         if (args.length == 0) {
-            sender.sendMessage("§6--- AI Minecraft Commands ---");
-            sender.sendMessage("§e/ai reload §7- Reload config and behavior");
-            sender.sendMessage("§e/ai info   §7- Show current AI status");
+            sendHelp(sender);
             return true;
         }
 
-        if (args[0].equalsIgnoreCase("reload")) {
-            plugin.reloadConfig();
-            plugin.loadResources(); // We'll add this method to AiPlugin
-            sender.sendMessage("§a[AI] Configuration and Behavior reloaded!");
-            return true;
-        }
+        switch (args[0].toLowerCase()) {
+            case "reload":
+                plugin.loadResources();
+                sender.sendMessage("§a[AI] Configuration and Behavior reloaded!");
+                return true;
 
-        if (args[0].equalsIgnoreCase("info")) {
-            String model = plugin.getConfig().getString("gemini-model");
-            sender.sendMessage("§a[AI] Current Model: §f" + model);
-            sender.sendMessage("§a[AI] Status: §fReady");
-            return true;
-        }
+            case "on":
+                plugin.setAiEnabled(true);
+                sender.sendMessage("§a[AI] Plugin turned §2ON§a.");
+                return true;
 
-        return false;
+            case "off":
+                plugin.setAiEnabled(false);
+                sender.sendMessage("§a[AI] Plugin turned §cOFF§a.");
+                return true;
+
+            case "toggle":
+                if (args.length > 1) {
+                    if (args[1].equalsIgnoreCase("on")) {
+                        plugin.setAiEnabled(true);
+                        sender.sendMessage("§a[AI] Plugin turned §2ON§a.");
+                    } else if (args[1].equalsIgnoreCase("off")) {
+                        plugin.setAiEnabled(false);
+                        sender.sendMessage("§a[AI] Plugin turned §cOFF§a.");
+                    }
+                } else {
+                    boolean newState = !plugin.isAiEnabled();
+                    plugin.setAiEnabled(newState);
+                    sender.sendMessage("§a[AI] Plugin toggled " + (newState ? "§2ON" : "§cOFF") + "§a.");
+                }
+                return true;
+
+            case "global":
+                plugin.setInteractionMode("global");
+                sender.sendMessage("§a[AI] Mode set to §2GLOBAL§a. AI will respond to all chat.");
+                return true;
+
+            case "whisper":
+                plugin.setInteractionMode("whisper");
+                sender.sendMessage("§a[AI] Mode set to §cWHISPER§a. AI will only respond via private message.");
+                return true;
+
+            case "mode":
+                if (args.length < 2) {
+                    sender.sendMessage("§cUsage: /ai mode <global|whisper>");
+                    return true;
+                }
+                String mode = args[1].toLowerCase();
+                if (mode.startsWith("g")) {
+                    plugin.setInteractionMode("global");
+                    sender.sendMessage("§a[AI] Mode set to §2GLOBAL§a.");
+                } else if (mode.startsWith("w")) {
+                    plugin.setInteractionMode("whisper");
+                    sender.sendMessage("§a[AI] Mode set to §cWHISPER§a.");
+                } else {
+                    sender.sendMessage("§cInvalid mode. Use 'global' or 'whisper'.");
+                }
+                return true;
+
+            case "status":
+            case "info":
+                String currentModel = plugin.getConfig().getString("gemini-model");
+                sender.sendMessage("§6--- AI Status ---");
+                sender.sendMessage("§aModel: §f" + currentModel);
+                sender.sendMessage("§aState: " + (plugin.isAiEnabled() ? "§2ENABLED" : "§cDISABLED"));
+                sender.sendMessage("§aMode:  §f" + plugin.getInteractionMode().toUpperCase());
+                return true;
+
+            default:
+                sendHelp(sender);
+                return true;
+        }
+    }
+
+    private void sendHelp(CommandSender sender) {
+        sender.sendMessage("§6--- AI Minecraft Commands ---");
+        sender.sendMessage("§e/ai on/off    §7- Enable or disable the AI");
+        sender.sendMessage("§e/ai toggle    §7- Toggle AI state");
+        sender.sendMessage("§e/ai mode <g|w>§7- Switch between Global and Whisper mode");
+        sender.sendMessage("§e/ai reload    §7- Reload config and behavior");
+        sender.sendMessage("§e/ai status    §7- Show current AI settings");
+        sender.sendMessage("§e/server <msg> §7- Directly talk to the AI");
     }
 }

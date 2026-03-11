@@ -23,9 +23,11 @@ public class YapTask extends BukkitRunnable {
     private final int scanRadius;
     private final int layersAbove;
     private final int layersBelow;
+    
+    private final MemoryManager memoryManager;
 
     public YapTask(AiPlugin plugin, GeminiClient aiClient, ChatListener chatListener,
-                   int scanRadius, int layersAbove, int layersBelow) {
+                   int scanRadius, int layersAbove, int layersBelow, MemoryManager memoryManager) {
         this.plugin = plugin;
         this.aiClient = aiClient;
         this.chatListener = chatListener;
@@ -33,11 +35,15 @@ public class YapTask extends BukkitRunnable {
         this.scanRadius = scanRadius;
         this.layersAbove = layersAbove;
         this.layersBelow = layersBelow;
+        this.memoryManager = memoryManager;
     }
 
     @Override
     public void run() {
-        if (!plugin.getConfig().getBoolean("yapper.enabled")) return;
+        if (!plugin.isAiEnabled() || !plugin.getConfig().getBoolean("yapper.enabled")) {
+            scheduleNext();
+            return;
+        }
 
         if (Bukkit.getOnlinePlayers().isEmpty()) {
             scheduleNext();
@@ -51,12 +57,19 @@ public class YapTask extends BukkitRunnable {
         // Scan must happen on the main thread (this task already runs on main thread via runTaskLater)
         WorldScanner.ScanResult scan = WorldScanner.scan(target, scanRadius, layersBelow, layersAbove);
         String surroundings = WorldScanner.buildTextSummary(scan);
+        String profileInfo = memoryManager.buildPlayerSummary(target);
         byte[] mapImage = MapRenderer.render(scan);
 
-        String prompt = buildYapPrompt(target.getName(), surroundings);
+        String prompt = buildYapPrompt(target.getName(), surroundings, profileInfo);
 
         aiClient.generateResponse(prompt, mapImage).thenAccept(response -> {
-            if (response == null || response.isBlank() || response.toUpperCase().contains("SKIP")) {
+            if (response == null || response.isBlank()) {
+                scheduleNext();
+                return;
+            }
+
+            String trimmedResponse = response.trim();
+            if (trimmedResponse.equalsIgnoreCase("SKIP") || trimmedResponse.toUpperCase().startsWith("SKIP ")) {
                 scheduleNext();
                 return;
             }
@@ -74,17 +87,18 @@ public class YapTask extends BukkitRunnable {
         int min = plugin.getConfig().getInt("yapper.min-delay", 10);
         int max = plugin.getConfig().getInt("yapper.max-delay", 15);
         long delayTicks = (long) (random.nextInt(max - min + 1) + min) * 60 * 20;
-        new YapTask(plugin, aiClient, chatListener, scanRadius, layersAbove, layersBelow)
+        new YapTask(plugin, aiClient, chatListener, scanRadius, layersAbove, layersBelow, memoryManager)
             .runTaskLater(plugin, delayTicks);
     }
 
-    private String buildYapPrompt(String observedPlayer, String surroundings) {
+    private String buildYapPrompt(String observedPlayer, String surroundings, String profileInfo) {
         String brainContext = LogUtils.getAllLines(brainFile);
         String template = plugin.getConfig().getString("prompts.yap-prompt");
 
         if (template == null) {
             return "[PERSONALITY]:\n" + chatListener.getBehavior() + "\n\n" +
                    "[PREVIOUS KNOWLEDGE (BRAIN LOGS)]:\n" + brainContext + "\n\n" +
+                   profileInfo + "\n\n" +
                    surroundings + "\n" +
                    "- Currently observing player: " + observedPlayer + "\n\n" +
                    "[VISUAL MAP]: An image of " + observedPlayer + "'s surroundings is attached.\n\n" +
@@ -98,6 +112,7 @@ public class YapTask extends BukkitRunnable {
         return template.replace("{personality}", chatListener.getBehavior())
                 .replace("{brain}", brainContext)
                 .replace("{surroundings}", surroundings)
+                .replace("{player_profile}", profileInfo)
                 .replace("{observed_player}", observedPlayer)
                 .replace("{history}", chatListener.getHistory());
     }

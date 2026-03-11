@@ -1,7 +1,12 @@
 # Gemini API Configuration
-gemini-api-key: "YOUR_GEMINI_API_KEY_HERE"
+gemini-api-key: "AIzaSyAc7kkn0XBnhytvbMjB3yiHDb6ZLTFtCrM"
 # Choose your model: gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
 gemini-model: "gemini-2.5-flash"
+
+# Global Plugin Settings
+enabled: true
+# Choose your interaction mode: "global" (all chat) or "whisper" (private only)
+interaction-mode: "global"
 
 # The name displayed in chat
 bot-name: "Server"
@@ -42,6 +47,8 @@ prompts:
     [PREVIOUS KNOWLEDGE]:
     {brain}
 
+    {player_profile}
+
     [SOCIAL CONTEXT]:
     - Speaker: {user}
     - Total players online: {online}
@@ -62,6 +69,11 @@ prompts:
     3. You have something genuinely witty or important to add to a major event.
 
     Otherwise, respond exactly with 'SKIP'.
+    
+    [MEMORY COMMAND]: If you want to permanently remember a specific fact or preference about a player (e.g., their favorite block, a joke they made, or a nickname), you can append this exact tag to the VERY END of your response:
+    [REMEMBER: <player_name>] <the specific fact to remember>
+    Example: "I see you building with dirt again. [REMEMBER: Steve] Loves building with dirt."
+    The tag will be hidden from the public chat and saved to their dossier.
 
   # Prompt for Join/Leave events.
   event-decision: |
@@ -70,6 +82,8 @@ prompts:
 
     [PREVIOUS KNOWLEDGE]:
     {brain}
+
+    {player_profile}
 
     [SOCIAL CONTEXT]:
     - Player: {user}
@@ -90,6 +104,8 @@ prompts:
     [PREVIOUS KNOWLEDGE]:
     {brain}
 
+    {player_profile}
+
     [SOCIAL CONTEXT]:
     - Player: {user}
     - Event: {event}
@@ -109,6 +125,8 @@ prompts:
     [PREVIOUS KNOWLEDGE (BRAIN LOGS)]:
     {brain}
 
+    {player_profile}
+
     {surroundings}
     - Currently observing player: {observed_player}
 
@@ -121,6 +139,10 @@ prompts:
     Use the SURROUNDINGS data and the visual map to make your comment feel real. 
     Comment on what {observed_player} is doing, where they are, or what's around them. 
     Refer to past events if relevant. Keep it short.
+    
+    [MEMORY COMMAND]: If you learn a specific fact or preference about a player from this interaction, append this exact tag to the VERY END of your response:
+    [REMEMBER: <player_name>] <the specific fact to remember>
+    Example: [REMEMBER: Alex] Left a chest full of diamonds near spawn.
 
   # Prompt for session summary on shutdown.
   session-summary: |
