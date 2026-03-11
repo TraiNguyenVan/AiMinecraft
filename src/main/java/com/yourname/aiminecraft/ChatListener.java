@@ -196,8 +196,14 @@ public class ChatListener implements Listener {
                 String note = memMatcher.group(2).trim();
 
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    memoryManager.addNote(targetPlayer, note);
-                    plugin.getLogger().info("AI saved memory for " + targetPlayer + ": " + note);
+                    // Filter stored notes as well, so we don't persist slurs or toxic text.
+                    String safeNote = sanitizeResponse(note);
+                    if (safeNote == null || safeNote.isBlank()) {
+                        plugin.getLogger().warning("AI tried to save an unsafe note for " + targetPlayer + " which was discarded.");
+                        return;
+                    }
+                    memoryManager.addNote(targetPlayer, safeNote);
+                    plugin.getLogger().info("AI saved memory for " + targetPlayer + ": " + safeNote);
                 });
 
                 finalResponse = memMatcher.replaceAll("").trim();
@@ -223,10 +229,12 @@ public class ChatListener implements Listener {
 
                 finalResponse = forgetPattern.matcher(finalResponse).replaceAll("").trim();
             }
+
+            // Final safety pass: drop or trim anything that looks offensive.
+            String safe = sanitizeResponse(finalResponse);
+            if (safe == null || safe.isBlank()) return;
             
-            if (finalResponse.isBlank()) return;
-            
-            final String messageToSend = finalResponse;
+            final String messageToSend = safe;
 
             Bukkit.getScheduler().runTask(plugin, () -> {
                 String prefixText = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
@@ -362,5 +370,43 @@ public class ChatListener implements Listener {
 
     public String getBehavior() {
         return behavior;
+    }
+
+    /**
+     * Very simple safety filter to avoid obviously offensive replies.
+     * If the message contains blocked terms, it will be discarded.
+     * Also trims and softly caps message length to avoid walls of text.
+     */
+    private String sanitizeResponse(String text) {
+        if (text == null) return "";
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) return "";
+
+        String lower = trimmed.toLowerCase();
+
+        // Hard-block a small set of strong slurs / insults.
+        String[] blockedTerms = {
+                "fuck",
+                "fucking",
+                "bitch",
+                "bastard",
+                "retard",
+                "nigger",
+                "nigga"
+        };
+
+        for (String term : blockedTerms) {
+            if (lower.contains(term)) {
+                return "";
+            }
+        }
+
+        // Soft length cap: keep things concise and less ranty.
+        int maxLength = 240;
+        if (trimmed.length() > maxLength) {
+            trimmed = trimmed.substring(0, maxLength).trim();
+        }
+
+        return trimmed;
     }
 }

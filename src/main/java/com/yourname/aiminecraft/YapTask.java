@@ -62,25 +62,12 @@ public class YapTask extends BukkitRunnable {
 
         String prompt = buildYapPrompt(target.getName(), surroundings, profileInfo);
 
-        aiClient.generateResponse(prompt, mapImage).thenAccept(response -> {
-            if (response == null || response.isBlank()) {
-                scheduleNext();
-                return;
-            }
+        // Reuse ChatListener's response pipeline so yapping
+        // also benefits from SKIP handling, memory tags, and safety filters.
+        chatListener.sendAiResponse(prompt, mapImage, false, null);
 
-            String trimmedResponse = response.trim();
-            if (trimmedResponse.equalsIgnoreCase("SKIP") || trimmedResponse.toUpperCase().startsWith("SKIP ")) {
-                scheduleNext();
-                return;
-            }
-
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                String prefix = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
-                Bukkit.broadcast(Component.text(prefix + response.trim()));
-                chatListener.addHistory("Server: " + response.trim());
-                scheduleNext();
-            });
-        });
+        // Schedule the next yap after this one has been sent.
+        scheduleNext();
     }
 
     private void scheduleNext() {
