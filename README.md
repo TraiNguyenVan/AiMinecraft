@@ -1,63 +1,133 @@
 # AiMinecraft
 
-AiMinecraft is a lightweight, intelligent PaperMC plugin that transforms your Minecraft server into a responsive environment by connecting it directly to **Google's Gemini Generative AI API**. 
-
-Instead of just commanding a bot, AiMinecraft acts as an intelligent observer and active participant. It "listens" to the server's pulse, remembers conversations, and organically joins in the fun based on real-time events.
+AiMinecraft is a PaperMC plugin that makes your Minecraft server genuinely intelligent. It connects directly to **Google Gemini** and gives the AI *real eyes* — a full first-person rendered view of what each player sees, their equipment, what they're looking at, who's nearby, and a deep memory of everything that's happened on the server.
 
 ---
 
 ## ✨ Features
 
-- **Context-Aware Memory System:** The plugin permanently logs all player and AI chat to a local file (`brain.log`), providing the Gemini AI with rich, deep context of established lore and ongoing conversations.
-- **Event-Driven AI Reactions:** The bot actively monitors major server events and chimes in intelligently:
-  - Reactions to players joining/quitting.
-  - "Hater" mode: The AI chaotically roasts players when they experience a death or complete an advancement.
-  - Active chat participation: Replies organically when its name is mentioned or when asked a question, otherwise defaulting to a completely silent `SKIP` action to prevent chat spam.
-- **Randomized Chatter (YapTask):** An async background task that randomly starts conversations using the current world context (e.g., in-game Time of Day and Weather).
-- **Silent Failure Handling:** If the Gemini API rate-limits, hangs, or fails to parse a JSON response, the error is quietly written to the console while gracefully ignoring the message in-game, protecting player immersion.
-- **Dynamic Configuration:** Quickly update the bot's core prompt instruction via `behavior.txt` and use the `/ai reload` command in-game to hot-swap personalities.
+### 🧠 Context-Aware AI
+- Sends Gemini a rich text snapshot on every interaction: player health, hunger, XP level, armor, held items, hotbar contents, biome, dimension, time, weather, facing direction, terrain theme, and whether the player is in a player-built area.
+- Crosshair awareness: the AI knows exactly which **block or entity** the player is currently looking at.
+- Per-mob detail: each nearby mob is reported with its direction, distance, health percentage, and whether it's **targeting the player**.
+- Nearby players reported with what they're holding and what they're doing (sneaking, flying).
+
+### 👁️ AI Vision (Textured Voxel Renderer)
+The plugin renders a **true first-person screenshot** of the player's surroundings and sends it to Gemini as an image alongside every prompt.
+
+- **3D DDA raycasting** — exact voxel traversal, no gaps or artifacts
+- **Real Minecraft textures** — automatically extracted from the Minecraft client jar at startup (drop `client.jar` into `plugins/AiMinecraft/` to activate)
+- **Minecraft-style face shading** — top faces brighter, sides darker, bottom darkest
+- **Biome tints** — grass and leaves get the correct green tint
+- **Crosshair overlay** — center `+` so the AI knows what the player is aiming at
+- **Facing arrow** on the top-down minimap
+- Renders at **854×480** alongside a top-down map, two cross-sections, and a legend
+
+### � Live Web Viewer
+An embedded web server (default port `25462`) serves two views:
+
+| Tab | What it shows |
+|---|---|
+| 🌍 3D Map | Interactive Three.js voxel scene, orbit + zoom, auto-refreshes every 5s |
+| 👁️ AI Vision | **Exactly what Gemini sees** — the rendered PNG, live, auto-refreshing every 3s |
+
+Access vision preview directly at: `http://localhost:25462/?tab=vision`
+
+### 🗣️ Event-Driven Reactions
+- **Chat** — replies when mentioned or directly asked; silently `SKIP`s everything else
+- **Join/Leave** — comments on regulars; skips strangers
+- **Death** — roasts the player in character
+- **Advancements** — celebrates or roasts based on personality
+- **Yapper** — autonomous background task that randomly starts conversations using the live world context
+
+### 🧩 Player Memory System
+- `brain.log` — every chat message ever sent is appended; the full log is sent to Gemini every prompt for long-term context
+- `MemoryManager` — per-player dossiers updated live via `[REMEMBER: PlayerName] note` tags the AI can emit
+- Player profiles: last seen, total messages, notes — summarised and injected into every prompt
 
 ---
 
 ## 🏗️ Architecture
 
-AiMinecraft relies on a structured, async architecture to prevent the heavy AI network requests from freezing the main Minecraft thread.
-
-1. **`AiPlugin.java` (Core Entry Point):** Loads `config.yml` settings, establishes the default `behavior.txt` prompt, and registers events and commands.
-2. **`GeminiClient.java` (Agnostic REST Client):** Uses standard `java.net.http.HttpClient` configured for async requests (`sendAsync`). Sends structured JSON Prompts to `generativelanguage.googleapis.com` and parses the generative response.
-3. **`ChatListener.java` (Event Brain):** Manages all `@EventHandler` annotations (AsyncChatEvent, PlayerDeathEvent, PlayerJoinEvent). Dynamically pieces together context strings (time, online players, history) to craft precise prompts for the AI.
-4. **`YapTask.java` (Autonomous Cron):** Scheduled BukkitRunnable that occasionally pokes the AI with environmental data to see if it wants to start a conversation.
-5. **`LogUtils.java` (Memory Base):** Utility classes to seamlessly interact with `brain.log`. 
-
----
-
-## 🛠️ Building the Plugin (Docker approach)
-
-You don't need Java JDK 17 or Maven installed directly on your machine to build AiMinecraft! This project ships with a containerized build stage. 
-
-Run the following command from the root directory. It will spin up a Maven/Alpine container, compile the project into a fat JAR file, and extract it natively back to your host machine's directory:
-
-```bash
-docker build -t aiminecraft-build . && docker run --rm -v "$PWD":/host aiminecraft-build cp /output/AiMinecraft-1.0.jar /host/
+```
+AiPlugin           — entry point, config, async TextureManager init
+GeminiClient       — async REST calls to generativelanguage.googleapis.com
+ChatListener       — all event handlers, prompt assembly, memory writes
+WorldScanner       — main-thread block + entity + equipment scan → ScanResult
+TextureManager     — loads real Minecraft 16×16 textures from client jar at startup
+MapRenderer        — 3D DDA voxel renderer → PNG bytes sent to Gemini + served via web
+MapWebServer       — embedded HttpServer: /api/blocks, /api/players, /api/vision, /
+MemoryManager      — per-player notes and profile persistence
+YapTask            — scheduled autonomous chat task
+LogUtils           — brain.log read helper
 ```
 
-The compiled `AiMinecraft-1.0.jar` plugin will appear in the root of your project folder. Move it into your server's `/plugins` directory.
+---
+
+## 🛠️ Building
+
+No local Java or Maven needed — Docker handles it:
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/app \
+  -v maven-repo:/root/.m2 \
+  -w /app \
+  maven:3.9-eclipse-temurin-21 \
+  mvn package -q
+```
+
+Output: `target/AiMinecraft-1.0.jar` — drop into your server's `plugins/` folder.
 
 ---
 
-## ⚙️ Configuration & Usage
+## ⚙️ Setup
 
-When the plugin first starts, it automatically generates a plugin folder containing two critical files:
+### 1. API Key
+Edit `plugins/AiMinecraft/config.yml` after first run:
+```yaml
+gemini-api-key: "YOUR_GEMINI_API_KEY_HERE"
+gemini-model: "gemini-2.5-flash"
+```
+Get a free key at [aistudio.google.com](https://aistudio.google.com).
 
-### `config.yml`
-Here you set your Google Gemini API Key, Model type (e.g., `gemini-1.5-flash`), UI strings, delays for the YapTask, and prompt templates.
+### 2. Textures (optional but recommended)
+Get the Minecraft client jar for your server version and drop it in:
+```
+plugins/AiMinecraft/client.jar
+```
+The plugin will auto-detect it on next restart. Without it, the renderer uses flat colors.
 
-### `behavior.txt`
-This sets the overarching instruction (or "system prompt") for the AI. 
+```bash
+# Download the client jar automatically (replace 1.21.4 with your version)
+curl -s "$(curl -s https://launchermeta.mojang.com/mc/game/version_manifest_v2.json \
+  | python3 -c "import sys,json; vs=json.load(sys.stdin)['versions']; print(next(v['url'] for v in vs if v['id']=='1.21.4'))" \
+  | xargs curl -s \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['downloads']['client']['url'])")" \
+  -o plugins/AiMinecraft/client.jar
+```
 
-*Example:* `You are a chaotic demigod watching over a Minecraft server named 'Server'. You do not care for trivial matters, but enjoy roasting players.`
+### 3. Personality
+Edit `plugins/AiMinecraft/behavior.txt` — this is the system prompt for the AI.
 
-### Commands
-Requires permission node: `aiminecraft.admin`
-- `/ai reload` -> Reloads the `config.yml` and `behavior.txt` live.
-- `/ai info` -> View current model connection status.
+### 4. Scanner Range
+Increase in `config.yml` for more render distance (impacts performance):
+```yaml
+scanner:
+  radius: 30       # blocks in each direction (30 = 61×61 grid)
+  layers-above: 30
+  layers-below: 30
+```
+
+---
+
+## 💬 Commands
+
+Requires permission: `aiminecraft.admin`
+
+| Command | Description |
+|---|---|
+| `/ai reload` | Hot-reload `config.yml` and `behavior.txt` |
+| `/ai info` | Show current model and connection status |
+| `/ai on` / `/ai off` | Toggle AI responses |
+| `/server <message>` | Send a direct message to the AI (whisper mode) |
