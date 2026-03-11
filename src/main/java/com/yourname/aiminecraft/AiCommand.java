@@ -114,6 +114,47 @@ public class AiCommand implements CommandExecutor {
                 sender.sendMessage("§aMode:  §f" + plugin.getInteractionMode().toUpperCase());
                 return true;
 
+            case "notes":
+                if (args.length < 2) {
+                    sender.sendMessage("§cUsage: /ai notes <player>");
+                    return true;
+                }
+                java.util.List<String> notes = plugin.getMemoryManager().listNotes(args[1]);
+                if (notes.isEmpty()) {
+                    sender.sendMessage("§e[AI] No notes found for §f" + args[1] + "§e.");
+                } else {
+                    sender.sendMessage("§6--- Notes for " + args[1] + " ---");
+                    for (int i = 0; i < notes.size(); i++) {
+                        sender.sendMessage("§e[" + i + "] §f" + notes.get(i));
+                    }
+                }
+                return true;
+
+            case "forget":
+                if (args.length < 3) {
+                    sender.sendMessage("§cUsage: /ai forget <player> <index|all>");
+                    return true;
+                }
+                String targetPlayer = args[1];
+                String indexArg = args[2];
+                if (indexArg.equalsIgnoreCase("all")) {
+                    plugin.getMemoryManager().clearNotes(targetPlayer);
+                    sender.sendMessage("§a[AI] Cleared all notes for §f" + targetPlayer + "§a.");
+                } else {
+                    try {
+                        int idx = Integer.parseInt(indexArg);
+                        boolean ok = plugin.getMemoryManager().removeNote(targetPlayer, idx);
+                        if (ok) {
+                            sender.sendMessage("§a[AI] Removed note #" + idx + " for §f" + targetPlayer + "§a.");
+                        } else {
+                            sender.sendMessage("§c[AI] Note index #" + idx + " not found for " + targetPlayer + ".");
+                        }
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage("§cInvalid index. Use a number or 'all'.");
+                    }
+                }
+                return true;
+
             default:
                 sendHelp(sender);
                 return true;
@@ -122,11 +163,13 @@ public class AiCommand implements CommandExecutor {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6--- AI Minecraft Commands ---");
-        sender.sendMessage("§e/ai on/off    §7- Enable or disable the AI");
-        sender.sendMessage("§e/ai toggle    §7- Toggle AI state");
-        sender.sendMessage("§e/ai mode <g|w>§7- Switch between Global and Whisper mode");
-        sender.sendMessage("§e/ai reload    §7- Reload config and behavior");
-        sender.sendMessage("§e/ai status    §7- Show current AI settings");
-        sender.sendMessage("§e/server <msg> §7- Directly talk to the AI");
+        sender.sendMessage("§e/ai on/off      §7- Enable or disable the AI");
+        sender.sendMessage("§e/ai toggle      §7- Toggle AI state");
+        sender.sendMessage("§e/ai mode <g|w>  §7- Switch between Global and Whisper mode");
+        sender.sendMessage("§e/ai reload      §7- Reload config and behavior");
+        sender.sendMessage("§e/ai status      §7- Show current AI settings");
+        sender.sendMessage("§e/ai notes <p>   §7- List AI notes for a player");
+        sender.sendMessage("§e/ai forget <p> <i|all> §7- Delete a note (or all) for a player");
+        sender.sendMessage("§e/server <msg>   §7- Directly talk to the AI");
     }
 }

@@ -107,6 +107,88 @@ public class MemoryManager {
         profileCache.put(uuid, profile);
     }
 
+    /**
+     * Removes a note by its 0-based index from a player's profile.
+     * @return true if removal succeeded, false if index is out of bounds or player not found.
+     */
+    public boolean removeNote(String playerName, int index) {
+        OfflinePlayer op = Bukkit.getOfflinePlayerIfCached(playerName);
+        if (op == null) op = Bukkit.getOfflinePlayer(playerName);
+        if (op == null || op.getUniqueId() == null) return false;
+
+        UUID uuid = op.getUniqueId();
+        PlayerProfile profile = loadOrGetProfile(uuid);
+
+        if (index < 0 || index >= profile.aiNotes.size()) return false;
+
+        profile.aiNotes.remove(index);
+        saveProfile(uuid, profile);
+        profileCache.put(uuid, profile);
+        return true;
+    }
+
+    /**
+     * Removes all notes whose text contains {@code keyword} (case-insensitive).
+     * @return number of notes removed.
+     */
+    public int removeNoteByKeyword(String playerName, String keyword) {
+        OfflinePlayer op = Bukkit.getOfflinePlayerIfCached(playerName);
+        if (op == null) op = Bukkit.getOfflinePlayer(playerName);
+        if (op == null || op.getUniqueId() == null) return 0;
+
+        UUID uuid = op.getUniqueId();
+        PlayerProfile profile = loadOrGetProfile(uuid);
+
+        String lower = keyword.toLowerCase();
+        int before = profile.aiNotes.size();
+        profile.aiNotes.removeIf(note -> note.toLowerCase().contains(lower));
+        int removed = before - profile.aiNotes.size();
+
+        if (removed > 0) {
+            saveProfile(uuid, profile);
+            profileCache.put(uuid, profile);
+        }
+        return removed;
+    }
+
+    /** Removes ALL notes from a player's profile. */
+    public void clearNotes(String playerName) {
+        OfflinePlayer op = Bukkit.getOfflinePlayerIfCached(playerName);
+        if (op == null) op = Bukkit.getOfflinePlayer(playerName);
+        if (op == null || op.getUniqueId() == null) return;
+
+        UUID uuid = op.getUniqueId();
+        PlayerProfile profile = loadOrGetProfile(uuid);
+        profile.aiNotes.clear();
+        saveProfile(uuid, profile);
+        profileCache.put(uuid, profile);
+    }
+
+    /** Returns a copy of the note list for a player (by name), or empty list if not found. */
+    public java.util.List<String> listNotes(String playerName) {
+        OfflinePlayer op = Bukkit.getOfflinePlayerIfCached(playerName);
+        if (op == null) op = Bukkit.getOfflinePlayer(playerName);
+        if (op == null || op.getUniqueId() == null) return java.util.Collections.emptyList();
+
+        UUID uuid = op.getUniqueId();
+        PlayerProfile profile = loadOrGetProfile(uuid);
+        return new java.util.ArrayList<>(profile.aiNotes);
+    }
+
+    /** Internal helper: load profile from cache or disk. */
+    private PlayerProfile loadOrGetProfile(UUID uuid) {
+        if (profileCache.containsKey(uuid)) return profileCache.get(uuid);
+        File file = new File(profilesDir, uuid + ".json");
+        if (file.exists()) {
+            try (FileReader reader = new FileReader(file)) {
+                return gson.fromJson(reader, PlayerProfile.class);
+            } catch (IOException e) {
+                // fall through
+            }
+        }
+        return new PlayerProfile();
+    }
+
     public String buildPlayerSummary(Player player) {
         PlayerProfile profile = getProfile(player);
 

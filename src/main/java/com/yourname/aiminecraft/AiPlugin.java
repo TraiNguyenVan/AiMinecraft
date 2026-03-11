@@ -114,6 +114,10 @@ public class AiPlugin extends JavaPlugin {
         return listener;
     }
 
+    public MemoryManager getMemoryManager() {
+        return memoryManager;
+    }
+
     @Override
     public void onDisable() {
         if (webServer != null) webServer.stop();

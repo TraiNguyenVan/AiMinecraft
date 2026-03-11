@@ -183,21 +183,45 @@ public class ChatListener implements Listener {
 
             // Extract memory notes: [REMEMBER: PlayerName] note content
             Pattern memoryPattern = Pattern.compile("\\[REMEMBER:\\s*(.*?)\\]\\s*(.*)", Pattern.CASE_INSENSITIVE);
-            Matcher matcher = memoryPattern.matcher(trimmedResponse);
-            
+            Matcher memMatcher = memoryPattern.matcher(trimmedResponse);
+
+            // Extract forget commands: [FORGET: PlayerName] <keyword or "all">
+            // Uses (.+) so the AI can write any natural-language snippet of the note to delete.
+            Pattern forgetPattern = Pattern.compile("\\[FORGET:\\s*(.*?)\\]\\s*(.+)", Pattern.CASE_INSENSITIVE);
+            Matcher forgetMatcher = forgetPattern.matcher(trimmedResponse);
+
             String finalResponse = trimmedResponse;
-            if (matcher.find()) {
-                String targetPlayer = matcher.group(1).trim();
-                String note = matcher.group(2).trim();
-                
-                // Add the note asynchronously or correctly inside the main thread wrapper
+            if (memMatcher.find()) {
+                String targetPlayer = memMatcher.group(1).trim();
+                String note = memMatcher.group(2).trim();
+
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     memoryManager.addNote(targetPlayer, note);
                     plugin.getLogger().info("AI saved memory for " + targetPlayer + ": " + note);
                 });
-                
-                // Remove the tag from the final string we broadcast
-                finalResponse = matcher.replaceAll("").trim();
+
+                finalResponse = memMatcher.replaceAll("").trim();
+            }
+
+            if (forgetMatcher.find()) {
+                String targetPlayer = forgetMatcher.group(1).trim();
+                String keyword      = forgetMatcher.group(2).trim();
+
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (keyword.equalsIgnoreCase("all")) {
+                        memoryManager.clearNotes(targetPlayer);
+                        plugin.getLogger().info("AI cleared all memory for " + targetPlayer);
+                    } else {
+                        int removed = memoryManager.removeNoteByKeyword(targetPlayer, keyword);
+                        if (removed > 0) {
+                            plugin.getLogger().info("AI forgot " + removed + " note(s) for " + targetPlayer + " matching: \"" + keyword + "\"");
+                        } else {
+                            plugin.getLogger().warning("AI tried to forget \"" + keyword + "\" for " + targetPlayer + " but no matching note was found.");
+                        }
+                    }
+                });
+
+                finalResponse = forgetPattern.matcher(finalResponse).replaceAll("").trim();
             }
             
             if (finalResponse.isBlank()) return;
@@ -252,6 +276,11 @@ public class ChatListener implements Listener {
                    "1. You were explicitly mentioned.\n" +
                    "2. The speaker is clearly asking you a direct question.\n" +
                    "3. You have something genuinely witty or important to add to a major event.\n\n" +
+                   "MEMORY TOOLS (prepend silently to your response, they will be stripped before broadcast):\n" +
+                   "- To save a new note: [REMEMBER: PlayerName] the thing to remember\n" +
+                   "- To delete a note: [FORGET: PlayerName] any word or phrase from that note\n" +
+                   "- To wipe all notes: [FORGET: PlayerName] all\n" +
+                   "Use FORGET when a player corrects you or an old note is clearly wrong/outdated. You don't need an index—just quote any part of the note text.\n\n" +
                    "Otherwise, respond exactly with 'SKIP'.";
         }
 
