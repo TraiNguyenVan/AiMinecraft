@@ -91,7 +91,7 @@ public class GeminiClient {
         if (groundingEnabled) {
             JsonArray tools = new JsonArray();
             JsonObject tool = new JsonObject();
-            tool.add("google_search_retrieval", new JsonObject());
+            tool.add("google_search", new JsonObject());
             tools.add(tool);
             requestBody.add("tools", tools);
         }

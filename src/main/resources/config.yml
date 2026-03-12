@@ -27,10 +27,10 @@ history-limit: 10
 # Surroundings Scanner settings
 scanner:
   # Block radius to scan around the player (30 = 61x61 grid)
-  radius: 30
+  radius: 60
   # Number of Y-levels to scan above and below the player
-  layers-above: 30
-  layers-below: 30
+  layers-above: 15
+  layers-below: 15
 
 # Web-based 3D Map Viewer
 web-viewer:
