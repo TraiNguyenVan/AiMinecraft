@@ -17,11 +17,22 @@ public class GeminiClient {
     private final Gson gson;
     private static final String BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
 
+    private boolean groundingEnabled = false;
+    private boolean includeGroundingMetadata = false;
+
     public GeminiClient(String apiKey, String model) {
         this.apiKey = apiKey;
         this.model = model;
         this.httpClient = HttpClient.newHttpClient();
         this.gson = new Gson();
+    }
+
+    public void setGroundingEnabled(boolean enabled) {
+        this.groundingEnabled = enabled;
+    }
+
+    public void setIncludeGroundingMetadata(boolean include) {
+        this.includeGroundingMetadata = include;
     }
 
     /** Text-only request (original method, unchanged). */
@@ -77,6 +88,14 @@ public class GeminiClient {
 
     /** Shared method to send the request and parse the response. */
     private CompletableFuture<String> sendRequest(JsonObject requestBody) {
+        if (groundingEnabled) {
+            JsonArray tools = new JsonArray();
+            JsonObject tool = new JsonObject();
+            tool.add("google_search_retrieval", new JsonObject());
+            tools.add(tool);
+            requestBody.add("tools", tools);
+        }
+
         String jsonBody = gson.toJson(requestBody);
         String apiUrl = BASE_URL + model + ":generateContent?key=" + apiKey;
 
@@ -94,12 +113,18 @@ public class GeminiClient {
                     }
                     JsonObject resJson = gson.fromJson(response.body(), JsonObject.class);
                     try {
-                        return resJson.getAsJsonArray("candidates")
-                                .get(0).getAsJsonObject()
-                                .getAsJsonObject("content")
+                        JsonObject candidate = resJson.getAsJsonArray("candidates").get(0).getAsJsonObject();
+                        String text = candidate.getAsJsonObject("content")
                                 .getAsJsonArray("parts")
                                 .get(0).getAsJsonObject()
                                 .get("text").getAsString();
+
+                        if (includeGroundingMetadata && candidate.has("groundingMetadata")) {
+                            // Optionally append a verification badge if the AI used search
+                            text += " \u2713"; // Checkmark icon
+                        }
+
+                        return text;
                     } catch (Exception e) {
                         System.err.println("Gemini API Parse Error: " + e.getMessage());
                         return "SKIP";

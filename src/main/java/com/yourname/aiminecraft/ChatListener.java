@@ -233,24 +233,31 @@ public class ChatListener implements Listener {
             // Final safety pass: drop or trim anything that looks offensive.
             String safe = sanitizeResponse(finalResponse);
             if (safe == null || safe.isBlank()) return;
+            
+            final String messageToSend = safe;
 
-            AiPlugin aiPlugin = (AiPlugin) plugin;
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                String prefixText = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
+                Component prefix = Component.text(prefixText);
+                Component message = prefix.append(Component.text(messageToSend));
 
-            // If web search verification is enabled, run a lightweight check for
-            // messages that look like factual answers (Minecraft mechanics, recipes,
-            // or real‑world facts) and append a short summary of top search results.
-            if (aiPlugin.isSearchEnabled() && shouldVerifyMessage(safe)) {
-                String query = buildVerificationQuery(safe);
-                aiPlugin.getSearchClient().searchSummary(query).thenAccept(summary -> {
-                    String messageToSend = safe;
-                    if (summary != null && !summary.isBlank()) {
-                        messageToSend = safe + "\n\n" + summary;
-                    }
-                    dispatchMessage(messageToSend, replyTo);
-                });
-            } else {
-                dispatchMessage(safe, replyTo);
-            }
+                if (replyTo != null) {
+                    // Send private message (Whisper)
+                    replyTo.sendMessage(message);
+                } else {
+                    // Broadcast
+                    Bukkit.broadcast(message);
+                }
+                
+                addHistory("Server: " + messageToSend);
+
+                try {
+                    java.nio.file.Files.writeString(brainFile.toPath(), "Server: " + messageToSend + "\n",
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                } catch (java.io.IOException e) {
+                    plugin.getLogger().warning("Failed to save AI response to brain.log.");
+                }
+            });
         });
     }
 
@@ -278,6 +285,7 @@ public class ChatListener implements Listener {
                    "2. The speaker is clearly asking you a direct question.\n" +
                    "3. You have something genuinely witty or important to add to a major event.\n\n" +
                    "MEMORY TOOLS (prepend silently to your response, they will be stripped before broadcast):\n" +
+                   "[GROUNDING]: If you are asked a factual question (especially about Minecraft mechanics, recipes, or real-world info), use your available Google Search tool to verify the answer before responding. Use it even for seemingly simple Minecraft facts to ensure accuracy.\n\n" +
                    "- To save a new note: [REMEMBER: PlayerName] the thing to remember\n" +
                    "- To delete a note: [FORGET: PlayerName] any word or phrase from that note\n" +
                    "- To wipe all notes: [FORGET: PlayerName] all\n" +
@@ -363,66 +371,6 @@ public class ChatListener implements Listener {
 
     public String getBehavior() {
         return behavior;
-    }
-
-    /**
-     * Decide if a reply probably contains factual content worth verifying.
-     * Very simple heuristic tuned for Minecraft tips and real‑world facts.
-     */
-    private boolean shouldVerifyMessage(String text) {
-        String lower = text.toLowerCase();
-        if (lower.contains("minecraft") || lower.contains("crafting") || lower.contains("recipe")
-                || lower.contains("damage") || lower.contains("enchant")
-                || lower.contains("how to ") || lower.contains("according to")
-                || lower.contains("in real life") || lower.contains("irl")) {
-            return true;
-        }
-        // If it looks like a longer informational answer, verify it.
-        return text.length() > 80;
-    }
-
-    /**
-     * Build a web search query from the reply text.
-     * We just truncate and rely on the engine to interpret it.
-     */
-    private String buildVerificationQuery(String text) {
-        String trimmed = text.trim();
-        int maxLen = 140;
-        if (trimmed.length() > maxLen) {
-            trimmed = trimmed.substring(0, maxLen);
-        }
-        return trimmed;
-    }
-
-    /**
-     * Dispatches a final, already‑sanitized message to either the whole server
-     * or a single player (whisper), and records it in history + brain log.
-     */
-    private void dispatchMessage(String messageToSend, Player replyTo) {
-        if (messageToSend == null || messageToSend.isBlank()) return;
-
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            String prefixText = plugin.getConfig().getString("bot-prefix", "§6[Server]§f ");
-            Component prefix = Component.text(prefixText);
-            Component message = prefix.append(Component.text(messageToSend));
-
-            if (replyTo != null) {
-                // Send private message (Whisper)
-                replyTo.sendMessage(message);
-            } else {
-                // Broadcast
-                Bukkit.broadcast(message);
-            }
-
-            addHistory("Server: " + messageToSend);
-
-            try {
-                java.nio.file.Files.writeString(brainFile.toPath(), "Server: " + messageToSend + "\n",
-                    java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-            } catch (java.io.IOException e) {
-                plugin.getLogger().warning("Failed to save AI response to brain.log.");
-            }
-        });
     }
 
     /**

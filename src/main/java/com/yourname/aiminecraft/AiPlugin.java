@@ -15,8 +15,6 @@ public class AiPlugin extends JavaPlugin {
     private String behavior;
     private boolean aiEnabled = true;
     private String interactionMode = "global";
-    private SearchClient searchClient;
-    private boolean searchEnabled = false;
 
     @Override
     public void onEnable() {
@@ -39,21 +37,6 @@ public class AiPlugin extends JavaPlugin {
         String apiKey = getConfig().getString("gemini-api-key");
         String model = getConfig().getString("gemini-model", "gemini-1.5-flash");
 
-        // Optional Google Custom Search configuration
-        this.searchEnabled = getConfig().getBoolean("search.enabled", false);
-        String searchKey = getConfig().getString("search.google-api-key");
-        String searchCx  = getConfig().getString("search.google-cx");
-        if (searchEnabled && searchKey != null && !searchKey.isBlank() && searchCx != null && !searchCx.isBlank()) {
-            this.searchClient = new SearchClient(searchKey, searchCx);
-            getLogger().info("Search verification enabled via Google Custom Search.");
-        } else {
-            this.searchClient = null;
-            if (searchEnabled) {
-                getLogger().warning("search.enabled is true but search.google-api-key or search.google-cx is missing; disabling search.");
-            }
-            this.searchEnabled = false;
-        }
-
         // Load behavior.txt
         this.behavior = "You are a helpful Minecraft server assistant.";
         try {
@@ -67,6 +50,8 @@ public class AiPlugin extends JavaPlugin {
         }
 
         this.client = new GeminiClient(apiKey, model);
+        this.client.setGroundingEnabled(getConfig().getBoolean("gemini-grounding", true));
+        this.client.setIncludeGroundingMetadata(true); // Always show verification checkmark for now
 
         // Scanner config
         int scanRadius = getConfig().getInt("scanner.radius", 5);
@@ -133,14 +118,6 @@ public class AiPlugin extends JavaPlugin {
 
     public MemoryManager getMemoryManager() {
         return memoryManager;
-    }
-
-    public SearchClient getSearchClient() {
-        return searchClient;
-    }
-
-    public boolean isSearchEnabled() {
-        return searchEnabled && searchClient != null;
     }
 
     @Override

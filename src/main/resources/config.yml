@@ -2,6 +2,8 @@
 gemini-api-key: "YOUR_GEMINI_API_KEY_HERE"
 # Choose your model: gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
 gemini-model: "gemini-2.5-flash"
+# Enable Google Search grounding (allows AI to verify claims on the web)
+gemini-grounding: true
 
 # Global Plugin Settings
 enabled: true
@@ -34,13 +36,6 @@ scanner:
 web-viewer:
   enabled: true
   port: 25462
-
-# Optional web search verification (Google Custom Search)
-search:
-  enabled: true
-  # Get an API key and CX from Google Programmable Search Engine.
-  google-api-key: "AIzaSyDAMEGMo1Btp1vPsnu7wc5pqSKMG9kCmi4"
-  google-cx: "01d191212b40142d7"
 
 # Prompts for AI Decision Making
 # Placeholders: {personality}, {brain}, {user}, {online}, {mentioned}, {history},
